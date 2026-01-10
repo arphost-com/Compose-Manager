@@ -609,8 +609,8 @@ cmd_update() {
         say "${CYAN}[dry-run]${NC} $hook $name $dir"
         SUCCESSES+=("$name (Hook post-update) [dry-run]")
       else
-        "$hook" "$name" "$dir"
-        local rc=$?
+        local rc=0
+        "$hook" "$name" "$dir" || rc=$?
         if (( rc != 0 )); then
           say "${RED}HOOK FAILED${NC} project=${name} exit_code=${rc}"
           FAILURES+=("${name} (Hook post-update) exit_code=${rc}")
@@ -640,6 +640,9 @@ cmd_update() {
       SKIPPED+=("$name (Up) [pull failed]")
     fi
     (( STOP_REQUESTED )) && return 130
+
+    # Explicitly continue to next project regardless of success/failure
+    continue
   done
 }
 
