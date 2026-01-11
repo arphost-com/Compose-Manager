@@ -33,8 +33,13 @@ set -u -o pipefail
 #
 # The special rule implemented here is ONLY for update:
 #   post-update_<project>.sh overrides normal update flow.
+#
+# Configuration files (loaded in order, later values override):
+#   /etc/compose-manager.conf
+#   ~/.config/compose-manager.conf
 # -------------------------------------------------------------------
 
+# Default values (can be overridden by config files or CLI flags)
 ROOT="/docker"
 INACTIVE_MARKER=".inactive"
 
@@ -56,6 +61,13 @@ TIMEOUT_SECS=0
 # Hooks
 HOOKS_ENABLED=1
 HOOKS_DIR=""           # default: <ROOT>/.compose-manager/hooks
+
+# Load config files if they exist
+for _conf in /etc/compose-manager.conf ~/.config/compose-manager.conf; do
+  # shellcheck disable=SC1090
+  [[ -f "$_conf" ]] && source "$_conf"
+done
+unset _conf
 
 STOP_REQUESTED=0
 
@@ -133,6 +145,13 @@ Other:
   -p, --prune              Run prune at the end
   -v, --verbose            More output
   -h, --help               Show help
+
+Config files (loaded in order, later values override earlier):
+  /etc/compose-manager.conf           System-wide config
+  ~/.config/compose-manager.conf      User config
+
+  Supported variables: ROOT, INACTIVE_MARKER, LOG_ENABLED, LOG_DIR,
+  TIMEOUT_SECS, HOOKS_ENABLED, HOOKS_DIR
 
 Examples:
   ./compose-manager.sh --root /docker list
