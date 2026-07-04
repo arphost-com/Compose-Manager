@@ -177,7 +177,7 @@ deploy:docker02:
     - sudo -n chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${DEPLOY_PATH}" "${DOCKER_ROOT}/.compose-manager"
     - sudo -n find "${DOCKER_ROOT}/.compose-manager" -type d -exec chmod 2770 {} +
     - sudo -n find "${DOCKER_ROOT}/.compose-manager" -type f -exec chmod 660 {} +
-    - sudo -n rsync -a --delete --chown="${DEPLOY_USER}:${DEPLOY_USER}" --exclude='.git/' --exclude='.env' --exclude='bin/' --exclude='node_modules/' --exclude='web/dist/' --exclude='tmp/' ./ "${DEPLOY_PATH}/"
+    - sudo -n rsync -a --delete --chown="${DEPLOY_USER}:${DEPLOY_USER}" --exclude='.git/' --exclude='.claude/' --exclude='.env' --exclude='bin/' --exclude='node_modules/' --exclude='web/dist/' --exclude='tmp/' ./ "${DEPLOY_PATH}/"
     - umask 077
     - printf '%s\n' "API_KEY=${COMPOSE_MANAGER_API_KEY}" "DOCKER_ROOT=${DOCKER_ROOT}" "WEB_PORT=${WEB_PORT}" "DOCKER_GID=${DOCKER_GID}" "SERVER_USER=${SERVER_USER}" > "${CI_PROJECT_DIR}/compose-manager.env"
     - sudo -n install -m 600 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${CI_PROJECT_DIR}/compose-manager.env" "${DEPLOY_PATH}/.env"

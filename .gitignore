@@ -1,5 +1,6 @@
 # Claude Code instructions
 CLAUDE.md
+.claude/
 
 # Environment/config files with credentials
 backup.env
