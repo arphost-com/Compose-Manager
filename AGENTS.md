@@ -1,183 +1,198 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+Repository guidance for coding agents working on Compose Manager.
 
 ## Project Overview
 
-Compose Manager has two modes:
+Compose Manager has two supported surfaces:
 
-1. **CLI tool** (`compose-manager.sh`) — Bash script for discovering and managing Docker Compose projects under a root directory
-2. **API server + Web UI** (`server/` + `web/`) — Go REST API with modular skill system and React dashboard
+1. `compose-manager.sh` - Bash CLI for discovering and managing Docker Compose projects under a root directory.
+2. `server/` + `web/` - Go REST API with a React dashboard for compose operations, logs, stats, backups, database checks, security scans, registry login, and project creation.
 
-## Build & Test Commands
+Use the existing patterns. Keep CLI and API behavior aligned when both surfaces implement the same operation.
+
+## Build And Test
 
 ```bash
-# CLI (Bash)
+# CLI
 bash -n compose-manager.sh
-./compose-manager.sh --root /docker --dry-run update    # safe simulation
+./compose-manager.sh --root /docker --dry-run update
 
-# Server (Go 1.23)
-cd server && go test ./... && go build ./cmd/server
-cd server && go run ./cmd/server                        # requires API_KEY env
+# Server
+cd server && go test ./...
+cd server && go build ./cmd/server
+cd server && API_KEY=dev-key go run ./cmd/server
 
-# Cross-compile for Linux
-cd server && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../bin/compose-manager-server ./cmd/server
+# Web
+cd web && npm ci
+cd web && npm run build
+cd web && npm run dev
 
-# Web (React 18 + Vite 6 + Tailwind)
-cd web && npm ci && npm run build
-cd web && npm run dev                                   # dev server on :5173
-
-# Docker
-docker compose up -d --build                            # requires .env with API_KEY
-
-# Makefile
-make build          # build server + web
-make test           # go test + bash -n
-make docker-build   # docker compose build
+# Whole repo
+make test
+make build
+make docker-build
 ```
+
+`web/package-lock.json` is required. Do not remove it; Docker and `make build` rely on `npm ci`.
 
 ## Architecture
 
-### CLI (`compose-manager.sh`)
+### CLI
 
-Single-file Bash tool (~870 lines). Sequential flow: discover projects → filter → execute command → summary.
+`compose-manager.sh` is a single Bash tool. It discovers compose projects, applies filters, executes docker compose commands, runs hooks, and prints a summary.
 
-### API Server + Skills
+Important CLI behavior:
 
-```
-┌────────────────────────────────────────────────┐
-│              API Server (Go/Chi)               │
-│  /api/v1/projects/*     Core compose ops       │
-│  /api/v1/skills/*       Skill dispatch         │
-│  /health                Public health check    │
-└─────────────┬──────────────────────────────────┘
-              │
-┌─────────────▼──────────────────────────────────┐
-│           Skill Registry                        │
-│  Each skill implements Skill interface          │
-│  Skills register their own routes               │
-├─────────────────────────────────────────────────┤
-│ security │ debug │ backup │ dbadmin │ frontend  │
-└─────────────────────────────────────────────────┘
-              │
-┌─────────────▼──────────────────────────────────┐
-│         Core Engine                             │
-│  Discover, filter, compose exec, hooks          │
-│  Ports bash script logic to native Go           │
-└─────────────────────────────────────────────────┘
-```
+- Update hook override: if `post-update_<project>.sh` exists in the hooks directory, `update` runs only that hook and skips normal pull/up.
+- `-p` means `--prune`, not project.
+- Flags must come before the command.
+- Mutating commands must be listed in `is_mutating_command()`.
 
-**Server** (`server/`):
-- Entry: `cmd/server/main.go` — wires Chi router, skill registry, handlers
-- Core engine: `internal/core/` — discover.go, compose.go, hooks.go, engine.go, types.go
-- Handlers: `internal/handlers/` — projects.go, skills.go, helpers.go
-- Middleware: `internal/middleware/auth.go` — X-API-Key constant-time comparison
-- Skills: `internal/skills/` — registry.go + one package per skill
+### API Server
 
-**Web** (`web/`):
-- React SPA: Dashboard (project list + stats), ProjectDetail (tabs: overview, logs, stats, security, backups, databases, inspect), Settings (API key entry)
-- API client: `src/api/client.js`
-- Nginx reverse proxy: `/api/` → `http://server:8080`
+Entry point: `server/cmd/server/main.go`
 
-### Docker Services
+Main packages:
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| server  | 8080 (internal) | Go API server |
-| web     | 3020 → 8080 | React SPA via nginx |
+- `server/internal/core/` - discovery, compose execution, hooks, project creation, image source classification, registry login.
+- `server/internal/handlers/` - project, system, registry, and skill HTTP handlers.
+- `server/internal/middleware/` - API key auth.
+- `server/internal/skills/` - modular skill registry and built-in skills.
 
-Required env: `API_KEY`. Docker socket mounted for compose operations.
+Core routes are protected with `X-API-Key`; `/health` is public.
 
-## Skill System
+Core project routes:
 
-### Interface
-
-Every skill implements `internal/skills/registry.go:Skill`:
-- `Name()`, `Description()`, `Version()` — metadata
-- `Init(ctx, engine, cfg)` — receives core engine reference
-- `RegisterRoutes(r chi.Router)` — mounts routes under `/api/v1/skills/{name}/`
-- `HealthCheck(ctx)`, `Shutdown(ctx)` — lifecycle
-
-### Adding a New Skill
-
-1. Create package in `server/internal/skills/<name>/`
-2. Implement the `Skill` interface
-3. Add `registry.Register(<name>.New())` in `cmd/server/main.go`
-
-No other files need to change — the registry handles route mounting and lifecycle.
-
-### Built-in Skills
-
-| Skill | Routes | Purpose |
-|-------|--------|---------|
-| **security** | `GET scan/{name}`, `GET audit/{name}`, `GET report` | Trivy scans, compose config audit (privileged, host net, unpinned tags) |
-| **debug** | `GET logs/{name}`, `GET stats/{name}`, `GET inspect/{name}`, `GET events`, `GET top/{name}` | Container logs, resource usage, docker inspect/events |
-| **backup** | `POST create/{name}`, `GET list`, `POST restore/{name}/{id}`, `DELETE {id}` | tar.gz project directories, list/restore/delete |
-| **dbadmin** | `GET discover`, `GET health/{name}`, `POST dump/{name}`, `GET dumps` | Auto-detect DB containers (postgres/mysql/mariadb/redis/mongo), health checks, pg_dumpall/mysqldump |
-| **frontend** | `GET /*` | Serves the React SPA |
-
-## API Endpoints
-
-Auth: `X-API-Key` header on all `/api/v1/` routes. Health check (`/health`) is public.
-
-### Core Project Routes
-
-```
-GET    /api/v1/projects                         List all (filters: only, exclude, include_inactive, running_only)
-GET    /api/v1/projects/{name}                   Get project detail with containers
-GET    /api/v1/projects/{name}/status            docker compose ps
-POST   /api/v1/projects/{name}/pull              Pull images (?timeout=N)
-POST   /api/v1/projects/{name}/up                docker compose up -d
-POST   /api/v1/projects/{name}/down              docker compose down
-POST   /api/v1/projects/{name}/update            Hook or pull+up (?timeout=N)
-POST   /api/v1/projects/{name}/restart           docker compose restart
-PUT    /api/v1/projects/{name}/inactive           {"inactive": true/false}
-POST   /api/v1/projects/bulk/{action}            Bulk: {"projects":[], "exclude":[], "timeout":N}
-POST   /api/v1/prune                             docker system prune
+```text
+POST   /api/v1/projects
+GET    /api/v1/projects
+GET    /api/v1/projects/{name}
+GET    /api/v1/projects/{name}/images
+GET    /api/v1/projects/{name}/status
+POST   /api/v1/projects/{name}/pull
+POST   /api/v1/projects/{name}/up
+POST   /api/v1/projects/{name}/down
+POST   /api/v1/projects/{name}/update
+POST   /api/v1/projects/{name}/restart
+PUT    /api/v1/projects/{name}/inactive
+POST   /api/v1/projects/bulk/{action}
+POST   /api/v1/prune
+POST   /api/v1/registries/login
 ```
 
-### Response Envelope
+Response envelope:
 
 ```json
-{"status": "ok", "data": {...}, "timestamp": "2026-04-18T12:00:00Z"}
-{"status": "error", "error": "message", "timestamp": "..."}
+{"status":"ok","data":{},"timestamp":"..."}
+{"status":"error","error":"message","timestamp":"..."}
 ```
 
-## CLI: Critical Behavior
+### Skills
 
-### Update Hook Override
+Every skill implements `server/internal/skills/registry.go:Skill`:
 
-The `update` command: if `post-update_<project>.sh` exists in hooks dir, **only the hook runs** — normal pull+up is skipped. Both CLI and API server implement this. **Do not change without explicit intent.**
+- `Name()`, `Description()`, `Version()`
+- `Init(ctx, engine, cfg)`
+- `RegisterRoutes(r chi.Router)`
+- `HealthCheck(ctx)`, `Shutdown(ctx)`
 
-### Adding New CLI Commands
+Built-in skills:
 
-1. Create `cmd_<name>()` function
-2. Add to case statement in main dispatch
-3. If mutating, add to `is_mutating_command()`
-4. Update `usage()` function
+- `security` - image scans and compose config audit.
+- `debug` - logs, stats, inspect, events, top/processes.
+- `backup` - create, list, restore, delete project backups.
+- `dbadmin` - discover, health check, and dump supported DB containers.
+- `frontend` - serves the React SPA when embedded.
 
-### Known Quirks
+When adding a skill, create `server/internal/skills/<name>/`, implement `Skill`, and register it in `cmd/server/main.go`.
 
-- `-p` flag means `--prune` (not project)
-- Flags must come before the command; flags after command are treated as project names
+### Web UI
+
+React app in `web/src`.
+
+Important files:
+
+- `web/src/pages/Dashboard.jsx` - main management console, filters, bulk actions, creation, registry login.
+- `web/src/pages/ProjectDetail.jsx` - project actions, image sources, logs, stats, security, backups, DB checks, inspect, processes.
+- `web/src/pages/Settings.jsx` - browser-stored API key.
+- `web/src/api/client.js` - API client.
+- `web/src/index.css` - Tailwind component classes.
+
+UI expectations:
+
+- Keep controls practical and dense; this is an operations tool.
+- Use native `title` tooltips or an existing local tooltip pattern for operational controls.
+- Show destructive actions distinctly.
+- Avoid adding marketing/landing-page content.
+
+## Docker Deployment
+
+Services:
+
+| Service | Port | Purpose |
+| --- | --- | --- |
+| `server` | 8080 internal | Go API server |
+| `web` | `${WEB_PORT:-3020}:8080` | React SPA via nginx |
+
+Required environment:
+
+- `API_KEY`
+- `DOCKER_ROOT`
+- `DOCKER_GID`
+- `SERVER_USER`
+- `WEB_PORT`
+
+The server image runs as non-root by default (`SERVER_USER=1001:1001`) and is added to the host Docker socket group via `DOCKER_GID`. For hosts that intentionally require root compose management, set `SERVER_USER=0:0`.
+
+Docker credentials from registry login are stored under:
+
+```text
+/docker/.compose-manager/docker-config
+```
+
+## GitLab Pipeline
+
+`.gitlab-ci.yml` targets the `docker02` shell runner by default.
+
+- Validation runs `bash -n` and `docker compose config` with CI placeholder values.
+- Tests run Go and web builds inside Docker containers so the shell runner does not need local Go or Node.
+- Security jobs expect ARPHost runner tools on `PATH`: `semgrep`, `trivy`, `gitleaks`, `trufflehog`, and `dependency-check`.
+- `deploy:docker02` is manual-only. It syncs the repo to `/home/debian/docker/compose-manager`, writes `.env` from CI variables, and runs Compose as the `debian` user.
+- `COMPOSE_MANAGER_API_KEY` must be set as a masked GitLab CI/CD variable.
+- `smoke:docker02` runs after a completed manual deploy.
+
+## Security Guardrails
+
+- Never use `shell=True` or equivalent shell string execution for subprocess calls.
+- Do not hardcode credentials or weak default passwords.
+- Use `docker login --password-stdin` for registry auth.
+- Validate project names and backup IDs before using them in filesystem paths.
+- Do not allow logs/inspect/top access to containers outside the selected project.
+- Keep authenticated API errors in the standard JSON envelope.
+- Prefer non-root containers and absolute `WORKDIR`.
+- Do not disable CSRF or mark request-driven template output as raw HTML.
 
 ## Configuration
 
-### Server (env vars)
+Server env vars:
 
 | Variable | Default | Required |
-|----------|---------|----------|
-| `API_KEY` | — | Yes |
-| `ROOT` | `/docker` | No |
-| `PORT` | `8080` | No |
-| `HOOKS_DIR` | `<ROOT>/.compose-manager/hooks` | No |
-| `BACKUP_DIR` | `<ROOT>/.compose-manager/backups` | No |
+| --- | --- | --- |
+| `API_KEY` | none | yes |
+| `ROOT` | `/docker` | no |
+| `PORT` | `8080` | no |
+| `HOOKS_DIR` | `<ROOT>/.compose-manager/hooks` | no |
+| `BACKUP_DIR` | `<ROOT>/.compose-manager/backups` | no |
+| `DOCKER_CONFIG` | Docker default | no |
 
-### CLI (config files)
+CLI config files load in this order:
 
-Loaded in order: `/etc/compose-manager.conf` → `~/.config/compose-manager.conf`
-Variables: `ROOT`, `INACTIVE_MARKER`, `LOG_ENABLED`, `LOG_DIR`, `TIMEOUT_SECS`, `HOOKS_ENABLED`, `HOOKS_DIR`
+1. `/etc/compose-manager.conf`
+2. `~/.config/compose-manager.conf`
 
-## Commit Messages
+CLI variables include `ROOT`, `INACTIVE_MARKER`, `LOG_ENABLED`, `LOG_DIR`, `TIMEOUT_SECS`, `HOOKS_ENABLED`, and `HOOKS_DIR`.
 
-Use `Co-Authored-By: BarryBot` in commit messages. Never use "Codex".
+## Git And Commits
+
+Use `Co-Authored-By: BarryBot` in commit messages. Do not use "Codex" or "Claude" in commit metadata.

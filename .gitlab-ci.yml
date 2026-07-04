@@ -1,0 +1,198 @@
+stages:
+  - validate
+  - test
+  - build
+  - security
+  - deploy
+  - smoke
+
+variables:
+  DEPLOY_USER: "debian"
+  DEPLOY_PATH: "/home/debian/docker/compose-manager"
+  DOCKER_ROOT: "/home/debian/docker"
+  WEB_PORT: "3020"
+  COMPOSE_PROJECT_NAME: "compose-manager"
+  CI_COMPOSE_PROJECT_NAME: "compose-manager-ci-${CI_PIPELINE_ID}"
+
+default:
+  tags:
+    - docker02
+  interruptible: true
+
+validate:compose:
+  stage: validate
+  script:
+    - bash -n compose-manager.sh
+    - export API_KEY="ci-placeholder"
+    - export DOCKER_ROOT="${DOCKER_ROOT}"
+    - export WEB_PORT="${WEB_PORT}"
+    - export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
+    - export SERVER_USER="$(id -u "${DEPLOY_USER}"):$(id -g "${DEPLOY_USER}")"
+    - docker compose -p "${CI_COMPOSE_PROJECT_NAME}" config -q
+
+test:server:
+  stage: test
+  script:
+    - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e GOCACHE=/tmp/go-build -e GOMODCACHE=/tmp/go-mod -v "$PWD/server:/src" -w /src golang:1.23-alpine go test ./...
+
+test:web:
+  stage: test
+  script:
+    - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/.npm -v "$PWD/web:/src" -w /src node:20-alpine sh -lc 'npm ci && npm run build'
+
+build:images:
+  stage: build
+  needs:
+    - validate:compose
+    - test:server
+    - test:web
+  script:
+    - export API_KEY="ci-placeholder"
+    - export DOCKER_ROOT="${DOCKER_ROOT}"
+    - export WEB_PORT="${WEB_PORT}"
+    - export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
+    - export SERVER_USER="$(id -u "${DEPLOY_USER}"):$(id -g "${DEPLOY_USER}")"
+    - docker compose -p "${CI_COMPOSE_PROJECT_NAME}" build
+
+security:semgrep:
+  stage: security
+  script:
+    - command -v semgrep
+    - semgrep scan --config p/default --error --gitlab-sast --output gl-sast-report.json .
+  artifacts:
+    when: always
+    expire_in: 1 week
+    reports:
+      sast: gl-sast-report.json
+    paths:
+      - gl-sast-report.json
+
+security:gitleaks:
+  stage: security
+  script:
+    - command -v gitleaks
+    - gitleaks detect --source . --redact --report-format json --report-path gitleaks-report.json
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - gitleaks-report.json
+
+security:trufflehog:
+  stage: security
+  script:
+    - command -v trufflehog
+    - trufflehog filesystem --no-update --json --fail . | tee trufflehog-report.json
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - trufflehog-report.json
+
+security:trivy_repo:
+  stage: security
+  script:
+    - command -v trivy
+    - |
+      ignore_args=""
+      if [ -f .trivyignore ]; then
+        ignore_args="--ignorefile .trivyignore"
+      fi
+      trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL ${ignore_args} --format json --output trivy-repo-report.json --exit-code 1 .
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - trivy-repo-report.json
+
+security:dependency_check:
+  stage: security
+  script:
+    - command -v dependency-check
+    - mkdir -p "${HOME}/.cache/dependency-check-data"
+    - dependency-check --data "${HOME}/.cache/dependency-check-data" --project "compose-manager" --scan . --format GITLAB --out gl-dependency-scanning-report.json --failOnCVSS 7
+  artifacts:
+    when: always
+    expire_in: 1 week
+    reports:
+      dependency_scanning: gl-dependency-scanning-report.json
+    paths:
+      - gl-dependency-scanning-report.json
+
+security:image_scan:
+  stage: security
+  needs:
+    - build:images
+  script:
+    - command -v trivy
+    - export API_KEY="ci-placeholder"
+    - export DOCKER_ROOT="${DOCKER_ROOT}"
+    - export WEB_PORT="${WEB_PORT}"
+    - export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
+    - export SERVER_USER="$(id -u "${DEPLOY_USER}"):$(id -g "${DEPLOY_USER}")"
+    - docker compose -p "${CI_COMPOSE_PROJECT_NAME}" build
+    - |
+      ignore_args=""
+      if [ -f .trivyignore ]; then
+        ignore_args="--ignorefile .trivyignore"
+      fi
+      server_image="$(docker compose -p "${CI_COMPOSE_PROJECT_NAME}" images -q server)"
+      web_image="$(docker compose -p "${CI_COMPOSE_PROJECT_NAME}" images -q web)"
+      trivy image --scanners vuln,secret,misconfig --severity HIGH,CRITICAL ${ignore_args} --format json --output trivy-server-image-report.json --exit-code 1 "${server_image}"
+      trivy image --scanners vuln,secret,misconfig --severity HIGH,CRITICAL ${ignore_args} --format json --output trivy-web-image-report.json --exit-code 1 "${web_image}"
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - trivy-server-image-report.json
+      - trivy-web-image-report.json
+
+deploy:docker02:
+  stage: deploy
+  needs:
+    - validate:compose
+    - test:server
+    - test:web
+    - build:images
+    - security:semgrep
+    - security:gitleaks
+    - security:trufflehog
+    - security:trivy_repo
+    - security:dependency_check
+    - security:image_scan
+  rules:
+    - when: manual
+      allow_failure: false
+  resource_group: docker02-compose-manager
+  environment:
+    name: docker02
+    url: "http://docker02:${WEB_PORT}"
+  script:
+    - test -n "${COMPOSE_MANAGER_API_KEY:?Set COMPOSE_MANAGER_API_KEY as a masked GitLab CI/CD variable}"
+    - export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
+    - export SERVICE_UID="$(id -u "${DEPLOY_USER}")"
+    - export SERVICE_GID="$(id -g "${DEPLOY_USER}")"
+    - export SERVER_USER="${SERVICE_UID}:${SERVICE_GID}"
+    - sudo -n mkdir -p "${DEPLOY_PATH}" "${DOCKER_ROOT}/.compose-manager/hooks" "${DOCKER_ROOT}/.compose-manager/backups" "${DOCKER_ROOT}/.compose-manager/docker-config"
+    - sudo -n chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${DEPLOY_PATH}" "${DOCKER_ROOT}/.compose-manager"
+    - sudo -n find "${DOCKER_ROOT}/.compose-manager" -type d -exec chmod 2770 {} +
+    - sudo -n find "${DOCKER_ROOT}/.compose-manager" -type f -exec chmod 660 {} +
+    - sudo -n rsync -a --delete --chown="${DEPLOY_USER}:${DEPLOY_USER}" --exclude='.git/' --exclude='.env' --exclude='bin/' --exclude='node_modules/' --exclude='web/dist/' --exclude='tmp/' ./ "${DEPLOY_PATH}/"
+    - umask 077
+    - printf '%s\n' "API_KEY=${COMPOSE_MANAGER_API_KEY}" "DOCKER_ROOT=${DOCKER_ROOT}" "WEB_PORT=${WEB_PORT}" "DOCKER_GID=${DOCKER_GID}" "SERVER_USER=${SERVER_USER}" > "${CI_PROJECT_DIR}/compose-manager.env"
+    - sudo -n install -m 600 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${CI_PROJECT_DIR}/compose-manager.env" "${DEPLOY_PATH}/.env"
+    - rm -f "${CI_PROJECT_DIR}/compose-manager.env"
+    - sudo -n -u "${DEPLOY_USER}" docker compose --project-directory "${DEPLOY_PATH}" --env-file "${DEPLOY_PATH}/.env" -f "${DEPLOY_PATH}/docker-compose.yml" up -d --build --remove-orphans
+
+smoke:docker02:
+  stage: smoke
+  needs:
+    - deploy:docker02
+  rules:
+    - when: on_success
+  script:
+    - test -n "${COMPOSE_MANAGER_API_KEY:?Set COMPOSE_MANAGER_API_KEY as a masked GitLab CI/CD variable}"
+    - sudo -n -u "${DEPLOY_USER}" docker compose --project-directory "${DEPLOY_PATH}" --env-file "${DEPLOY_PATH}/.env" -f "${DEPLOY_PATH}/docker-compose.yml" ps
+    - curl -fsS "http://127.0.0.1:${WEB_PORT}/health"
+    - curl -fsS -H "X-API-Key: ${COMPOSE_MANAGER_API_KEY}" "http://127.0.0.1:${WEB_PORT}/api/v1/projects" >/tmp/compose-manager-projects.json
+    - sudo -n find "${DEPLOY_PATH}" "${DOCKER_ROOT}/.compose-manager" -maxdepth 2 -printf '%M %u:%g %p\n'

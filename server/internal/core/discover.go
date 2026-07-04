@@ -49,7 +49,7 @@ func (e *Engine) DiscoverProjects() ([]Project, error) {
 		return nil, &ErrNotFound{Msg: "root directory does not exist: " + e.RootDir}
 	}
 
-	var projects []Project
+	projects := make([]Project, 0)
 
 	// Check root dir itself
 	if cf := composeFileForDir(e.RootDir); cf != "" {
@@ -120,7 +120,7 @@ func (e *Engine) isInactive(dir string) bool {
 
 // FilterProjects applies filters to a list of projects.
 func FilterProjects(projects []Project, only, exclude []string, includeInactive, onlyInactive, runningOnly bool) []Project {
-	var out []Project
+	out := make([]Project, 0, len(projects))
 	onlySet := toSet(only)
 	excludeSet := toSet(exclude)
 

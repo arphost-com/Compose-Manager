@@ -2,6 +2,15 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { projects, debug as debugApi, security, backup, dbadmin } from '../api/client';
 
+const TABS = ['overview', 'sources', 'logs', 'stats', 'security', 'backups', 'databases', 'inspect', 'processes'];
+const ACTIONS = [
+  { key: 'update', label: 'Update', title: 'Pull and recreate containers, unless an update hook exists.' },
+  { key: 'pull', label: 'Pull', title: 'Pull images without restarting containers.' },
+  { key: 'up', label: 'Start', title: 'Run docker compose up -d.' },
+  { key: 'restart', label: 'Restart', title: 'Restart project containers.' },
+  { key: 'down', label: 'Stop', title: 'Run docker compose down.' },
+];
+
 export default function ProjectDetail() {
   const { name } = useParams();
   const [project, setProject] = useState(null);
@@ -10,13 +19,15 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [tabLoading, setTabLoading] = useState(false);
   const [actionResult, setActionResult] = useState(null);
+  const [timeout, setTimeoutValue] = useState(300);
+  const [logOptions, setLogOptions] = useState({ tail: 200, container: '' });
 
   const fetchProject = async () => {
     try {
       const res = await projects.get(name);
       setProject(res.data);
     } catch (err) {
-      setActionResult({ status: 'error', error: err.message });
+      setActionResult({ status: 'error', label: 'load project', error: err.message });
     } finally {
       setLoading(false);
     }
@@ -24,19 +35,22 @@ export default function ProjectDetail() {
 
   useEffect(() => { fetchProject(); }, [name]);
 
-  const loadTab = async (tab) => {
+  const loadTab = async (tab = activeTab) => {
     setActiveTab(tab);
     setTabData(null);
+    if (tab === 'overview') return;
     setTabLoading(true);
     try {
       let res;
       switch (tab) {
-        case 'logs': res = await debugApi.logs(name); break;
+        case 'sources': res = await projects.images(name); break;
+        case 'logs': res = await debugApi.logs(name, logOptions.tail, logOptions.container || undefined); break;
         case 'stats': res = await debugApi.stats(name); break;
         case 'security': res = await security.scan(name); break;
         case 'backups': res = await backup.listProject(name); break;
         case 'databases': res = await dbadmin.health(name); break;
         case 'inspect': res = await debugApi.inspect(name); break;
+        case 'processes': res = await debugApi.top(name); break;
         default: return;
       }
       setTabData(res.data);
@@ -49,182 +63,390 @@ export default function ProjectDetail() {
 
   const runAction = async (action) => {
     try {
-      setActionResult({ status: 'running', action });
-      let res;
-      switch (action) {
-        case 'pull': res = await projects.pull(name); break;
-        case 'up': res = await projects.up(name); break;
-        case 'down': res = await projects.down(name); break;
-        case 'restart': res = await projects.restart(name); break;
-        case 'update': res = await projects.update(name); break;
-        case 'backup': res = await backup.create(name); break;
-        case 'db-dump': res = await dbadmin.dump(name); break;
-      }
-      setActionResult({ status: 'done', action, result: res.data });
+      setActionResult({ status: 'running', label: action });
+      const res = await callAction(name, action, timeout);
+      setActionResult({ status: 'done', label: action, result: res.data });
       fetchProject();
+      if (activeTab !== 'overview') loadTab(activeTab);
     } catch (err) {
-      setActionResult({ status: 'error', action, error: err.message });
+      setActionResult({ status: 'error', label: action, error: err.message });
     }
   };
 
-  if (loading) return <div className="text-center py-12 text-gray-400">Loading...</div>;
-  if (!project) return <div className="text-center py-12 text-red-400">Project not found</div>;
+  const toggleInactive = async () => {
+    try {
+      const next = !project.inactive;
+      setActionResult({ status: 'running', label: next ? 'mark inactive' : 'mark active' });
+      await projects.setInactive(name, next);
+      setActionResult({ status: 'done', label: next ? 'mark inactive' : 'mark active' });
+      fetchProject();
+    } catch (err) {
+      setActionResult({ status: 'error', label: 'inactive toggle', error: err.message });
+    }
+  };
 
-  const tabs = ['overview', 'logs', 'stats', 'security', 'backups', 'databases', 'inspect'];
+  const createBackup = async () => {
+    try {
+      setActionResult({ status: 'running', label: 'backup' });
+      const res = await backup.create(name);
+      setActionResult({ status: 'done', label: 'backup', result: res.data });
+      loadTab('backups');
+    } catch (err) {
+      setActionResult({ status: 'error', label: 'backup', error: err.message });
+    }
+  };
+
+  const dumpDatabases = async () => {
+    try {
+      setActionResult({ status: 'running', label: 'database dump' });
+      const res = await dbadmin.dump(name);
+      setActionResult({ status: 'done', label: 'database dump', result: res.data });
+    } catch (err) {
+      setActionResult({ status: 'error', label: 'database dump', error: err.message });
+    }
+  };
+
+  if (loading) return <div className="text-center py-12 text-gray-500">Loading project...</div>;
+  if (!project) return <div className="text-center py-12 text-red-700">Project not found</div>;
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
-        <Link to="/" className="text-gray-400 hover:text-gray-200">&larr; Back</Link>
-        <span className={`w-3 h-3 rounded-full ${project.running ? 'bg-green-500' : 'bg-gray-500'}`} />
-        <h1 className="text-2xl font-bold">{project.name}</h1>
-        {project.inactive && <span className="text-xs bg-yellow-800 text-yellow-200 px-2 py-0.5 rounded">inactive</span>}
-      </div>
-
-      {/* Actions */}
-      <div className="flex gap-2 mb-6">
-        {['pull', 'up', 'down', 'restart', 'update', 'backup', 'db-dump'].map(action => (
-          <button key={action} onClick={() => runAction(action)}
-            className="px-3 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 rounded capitalize">
-            {action}
-          </button>
-        ))}
-      </div>
-
-      {/* Action result */}
-      {actionResult && (
-        <div className={`mb-4 p-3 rounded text-sm ${
-          actionResult.status === 'running' ? 'bg-blue-900 text-blue-200' :
-          actionResult.status === 'error' ? 'bg-red-900 text-red-200' :
-          'bg-green-900 text-green-200'
-        }`}>
-          {actionResult.status === 'running' ? `Running ${actionResult.action}...` :
-           actionResult.status === 'error' ? `Error: ${actionResult.error}` :
-           `${actionResult.action} completed`}
-          <button onClick={() => setActionResult(null)} className="ml-4 underline">dismiss</button>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <Link to="/" className="text-sm text-blue-700 hover:underline">Back to dashboard</Link>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold text-gray-950">{project.name}</h1>
+            <Badge tone={project.running ? 'green' : 'gray'}>{project.running ? 'running' : 'stopped'}</Badge>
+            {project.inactive && <Badge tone="amber">inactive</Badge>}
+            {project.has_hook?.update && <Badge tone="cyan">update hook</Badge>}
+          </div>
+          <p className="mt-1 font-mono text-xs text-gray-500">{project.dir}</p>
         </div>
-      )}
-
-      {/* Tabs */}
-      <div className="flex gap-1 mb-4 border-b border-gray-700">
-        {tabs.map(tab => (
-          <button key={tab} onClick={() => tab === 'overview' ? setActiveTab(tab) : loadTab(tab)}
-            className={`px-4 py-2 text-sm capitalize rounded-t ${
-              activeTab === tab ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'
-            }`}>{tab}</button>
-        ))}
+        <div className="flex flex-wrap gap-2">
+          <label className="flex items-center gap-2 text-sm text-gray-700" title="Seconds before pull/update commands time out.">
+            Timeout
+            <input type="number" min="0" value={timeout} onChange={e => setTimeoutValue(Number(e.target.value))} className="input w-24" />
+          </label>
+          <button title={project.inactive ? 'Remove the .inactive marker so normal operations include this project.' : 'Create .inactive so normal operations skip this project.'} onClick={toggleInactive} className="btn-secondary">
+            {project.inactive ? 'Activate' : 'Deactivate'}
+          </button>
+          <button title="Refresh project status, containers, hooks, and parsed sources." onClick={fetchProject} className="btn-secondary">Refresh</button>
+        </div>
       </div>
 
-      {/* Tab content */}
-      <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-        {activeTab === 'overview' && (
-          <div>
-            <p className="text-gray-400 text-sm mb-2">Directory: <code className="text-gray-300">{project.dir}</code></p>
-            <p className="text-gray-400 text-sm mb-4">Compose file: <code className="text-gray-300">{project.compose_file}</code></p>
-            <h3 className="font-semibold mb-2">Containers ({project.containers?.length || 0})</h3>
-            {project.containers?.map(c => (
-              <div key={c.name} className="flex items-center gap-3 py-2 border-b border-gray-700 last:border-0">
-                <span className={`w-2 h-2 rounded-full ${c.state === 'running' ? 'bg-green-500' : 'bg-gray-500'}`} />
-                <span className="font-mono text-sm">{c.name}</span>
-                <span className="text-gray-400 text-sm">{c.image}</span>
-                <span className="text-gray-500 text-xs">{c.state}</span>
-                {c.ports && <span className="text-gray-500 text-xs">{c.ports}</span>}
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="section-panel">
+        <div className="flex flex-wrap gap-2">
+          {ACTIONS.map(action => (
+            <button key={action.key} title={action.title} onClick={() => runAction(action.key)} className={action.key === 'down' ? 'btn-danger' : 'btn-secondary'}>
+              {action.label}
+            </button>
+          ))}
+          <button title="Create a tar.gz backup of the project directory." onClick={createBackup} className="btn-secondary">Backup</button>
+          <button title="Dump supported database containers in this project." onClick={dumpDatabases} className="btn-secondary">DB Dump</button>
+        </div>
+      </div>
 
-        {tabLoading && <div className="text-center py-8 text-gray-400">Loading...</div>}
+      {actionResult && <ActionResult result={actionResult} onDismiss={() => setActionResult(null)} />}
 
-        {!tabLoading && tabData && activeTab === 'logs' && (
-          <pre className="text-xs text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto font-mono">
-            {Array.isArray(tabData) ? tabData.map(l => l.output).join('\n') : JSON.stringify(tabData, null, 2)}
-          </pre>
-        )}
+      <div className="section-panel">
+        <div className="flex flex-wrap gap-1 border-b border-gray-200 pb-3">
+          {TABS.map(tab => (
+            <button key={tab} title={tabTitle(tab)} onClick={() => loadTab(tab)} className={`rounded-md px-3 py-1.5 text-sm capitalize ${activeTab === tab ? 'bg-blue-700 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
+              {tab}
+            </button>
+          ))}
+        </div>
 
-        {!tabLoading && tabData && activeTab === 'stats' && (
-          <div>
-            {tabData.stats?.map((s, i) => (
-              <div key={i} className="flex gap-6 py-2 border-b border-gray-700 last:border-0 text-sm">
-                <span className="font-mono w-48">{s.container}</span>
-                <span>CPU: {s.cpu}</span>
-                <span>Memory: {s.memory}</span>
-                <span>Net: {s.net_io}</span>
-                <span>Block: {s.block_io}</span>
-                <span>PIDs: {s.pids}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="pt-4">
+          {activeTab === 'overview' && <Overview project={project} />}
 
-        {!tabLoading && tabData && activeTab === 'security' && (
-          <div>
-            {tabData.summary && (
-              <div className="flex gap-4 mb-4">
-                {Object.entries(tabData.summary).map(([sev, count]) => (
-                  <span key={sev} className={`px-3 py-1 rounded text-sm ${
-                    sev === 'high' || sev === 'critical' ? 'bg-red-900 text-red-200' :
-                    sev === 'medium' ? 'bg-yellow-900 text-yellow-200' :
-                    'bg-gray-700 text-gray-300'
-                  }`}>{sev}: {count}</span>
-                ))}
-              </div>
-            )}
-            {tabData.findings?.map((f, i) => (
-              <div key={i} className="py-2 border-b border-gray-700 last:border-0 text-sm">
-                <span className={`px-2 py-0.5 rounded text-xs mr-2 ${
-                  f.severity === 'high' || f.severity === 'critical' ? 'bg-red-900 text-red-200' :
-                  f.severity === 'medium' ? 'bg-yellow-900 text-yellow-200' :
-                  'bg-gray-700 text-gray-300'
-                }`}>{f.severity}</span>
-                <span className="text-gray-400 text-xs mr-2">[{f.category}]</span>
-                {f.description}
-              </div>
-            ))}
-            {(!tabData.findings || tabData.findings.length === 0) && (
-              <p className="text-green-400">No security findings</p>
-            )}
-          </div>
-        )}
+          {activeTab === 'logs' && (
+            <div className="mb-4 flex flex-wrap items-end gap-3">
+              <Field label="Tail" title="Number of log lines to fetch.">
+                <input type="number" min="1" value={logOptions.tail} onChange={e => setLogOptions({ ...logOptions, tail: Number(e.target.value) })} className="input w-28" />
+              </Field>
+              <Field label="Container" title="Optional container filter. Only containers in this project are allowed.">
+                <select value={logOptions.container} onChange={e => setLogOptions({ ...logOptions, container: e.target.value })} className="input w-72">
+                  <option value="">All project containers</option>
+                  {project.containers?.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                </select>
+              </Field>
+              <button title="Reload logs with the current filters." onClick={() => loadTab('logs')} className="btn-secondary">Load Logs</button>
+            </div>
+          )}
 
-        {!tabLoading && tabData && activeTab === 'backups' && (
-          <div>
-            {Array.isArray(tabData) && tabData.map((b, i) => (
-              <div key={i} className="flex items-center gap-4 py-2 border-b border-gray-700 last:border-0 text-sm">
-                <span className="font-mono">{b.id}</span>
-                <span className="text-gray-400">{(b.size_bytes / 1024 / 1024).toFixed(1)} MB</span>
-                <span className="text-gray-500">{new Date(b.created_at).toLocaleString()}</span>
-              </div>
-            ))}
-            {(!tabData || tabData.length === 0) && <p className="text-gray-400">No backups found</p>}
-          </div>
-        )}
-
-        {!tabLoading && tabData && activeTab === 'databases' && (
-          <div>
-            {tabData.checks?.map((c, i) => (
-              <div key={i} className="flex items-center gap-4 py-2 border-b border-gray-700 last:border-0 text-sm">
-                <span className={`w-2 h-2 rounded-full ${c.healthy ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className="font-mono">{c.container}</span>
-                <span className="text-gray-400">{c.engine}</span>
-                <span className="text-gray-500">{c.healthy ? 'healthy' : 'unhealthy'}</span>
-              </div>
-            ))}
-            {(!tabData.checks || tabData.checks.length === 0) && <p className="text-gray-400">No database containers found</p>}
-          </div>
-        )}
-
-        {!tabLoading && tabData && activeTab === 'inspect' && (
-          <pre className="text-xs text-gray-300 whitespace-pre-wrap max-h-96 overflow-y-auto font-mono">
-            {JSON.stringify(tabData.inspections, null, 2)}
-          </pre>
-        )}
-
-        {!tabLoading && tabData?.error && (
-          <p className="text-red-400">Error: {tabData.error}</p>
-        )}
+          {tabLoading && <div className="py-8 text-center text-gray-500">Loading...</div>}
+          {!tabLoading && tabData?.error && <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{tabData.error}</div>}
+          {!tabLoading && !tabData?.error && activeTab === 'sources' && <Sources data={tabData} />}
+          {!tabLoading && !tabData?.error && activeTab === 'logs' && <Logs data={tabData} />}
+          {!tabLoading && !tabData?.error && activeTab === 'stats' && <Stats data={tabData} />}
+          {!tabLoading && !tabData?.error && activeTab === 'security' && <Security data={tabData} />}
+          {!tabLoading && !tabData?.error && activeTab === 'backups' && <Backups data={tabData} projectName={name} reload={() => loadTab('backups')} setActionResult={setActionResult} />}
+          {!tabLoading && !tabData?.error && activeTab === 'databases' && <Databases data={tabData} />}
+          {!tabLoading && !tabData?.error && activeTab === 'inspect' && <JsonBlock value={tabData?.inspections || []} />}
+          {!tabLoading && !tabData?.error && activeTab === 'processes' && <Processes data={tabData} />}
+        </div>
       </div>
     </div>
   );
+}
+
+async function callAction(name, action, timeout) {
+  switch (action) {
+    case 'pull': return projects.pull(name, timeout);
+    case 'up': return projects.up(name);
+    case 'down': return projects.down(name);
+    case 'restart': return projects.restart(name);
+    case 'update': return projects.update(name, timeout);
+    default: throw new Error(`unsupported action: ${action}`);
+  }
+}
+
+function Overview({ project }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-2">
+        <Info label="Compose file" value={project.compose_file} />
+        <Info label="Directory" value={project.dir} />
+      </div>
+      <div>
+        <h2 className="mb-2 text-lg font-semibold text-gray-950">Containers</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead><tr className="border-b border-gray-200 text-xs uppercase text-gray-500"><th className="py-2">Name</th><th>Image</th><th>State</th><th>Ports</th></tr></thead>
+            <tbody>
+              {project.containers?.map(c => (
+                <tr key={c.name} className="border-b border-gray-100">
+                  <td className="py-2 font-mono">{c.name}</td>
+                  <td className="font-mono text-xs text-gray-600">{c.image}</td>
+                  <td><Badge tone={c.state === 'running' ? 'green' : 'gray'}>{c.state}</Badge></td>
+                  <td className="text-xs text-gray-500">{c.ports}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {(!project.containers || project.containers.length === 0) && <div className="py-6 text-gray-500">No running containers found.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Sources({ data }) {
+  const images = data?.images || [];
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[820px] text-left text-sm">
+        <thead><tr className="border-b border-gray-200 text-xs uppercase text-gray-500"><th className="py-2">Service</th><th>Source</th><th>Image</th><th>Registry</th><th>Access</th><th>Message</th></tr></thead>
+        <tbody>
+          {images.map(img => (
+            <tr key={img.service} className="border-b border-gray-100 align-top">
+              <td className="py-2 font-medium">{img.service}</td>
+              <td><Badge tone={img.source_type === 'custom' ? 'violet' : 'blue'}>{img.source_type}</Badge></td>
+              <td className="font-mono text-xs text-gray-600">{img.image || img.build_context}</td>
+              <td className="font-mono text-xs text-gray-600">{img.registry}</td>
+              <td><Badge tone={accessTone(img.access)}>{img.access || 'not checked'}</Badge></td>
+              <td className="max-w-[360px] text-xs text-gray-500">{img.message}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {images.length === 0 && <div className="py-6 text-gray-500">No image metadata was parsed.</div>}
+    </div>
+  );
+}
+
+function Logs({ data }) {
+  const text = Array.isArray(data) ? data.map(l => l.output).join('\n') : JSON.stringify(data, null, 2);
+  return <pre className="max-h-[560px] overflow-auto rounded-md bg-gray-950 p-4 font-mono text-xs text-gray-100 whitespace-pre-wrap">{text}</pre>;
+}
+
+function Stats({ data }) {
+  return (
+    <div className="grid gap-2">
+      {data?.stats?.map((s, i) => (
+        <div key={i} className="grid gap-2 rounded-md border border-gray-200 p-3 text-sm md:grid-cols-6">
+          <span className="font-mono">{s.container}</span>
+          <span>CPU {s.cpu}</span>
+          <span>Memory {s.memory}</span>
+          <span>Mem {s.mem_percent}</span>
+          <span>Net {s.net_io}</span>
+          <span>PIDs {s.pids}</span>
+        </div>
+      ))}
+      {(!data?.stats || data.stats.length === 0) && <div className="py-6 text-gray-500">No running containers to measure.</div>}
+    </div>
+  );
+}
+
+function Security({ data }) {
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {Object.entries(data?.summary || {}).map(([severity, count]) => <Badge key={severity} tone={severityTone(severity)}>{severity}: {count}</Badge>)}
+      </div>
+      <div className="space-y-2">
+        {data?.findings?.map((f, i) => (
+          <div key={i} className="rounded-md border border-gray-200 p-3 text-sm">
+            <Badge tone={severityTone(f.severity)}>{f.severity}</Badge>
+            <span className="ml-2 text-xs text-gray-500">{f.category}</span>
+            <div className="mt-1">{f.description}</div>
+          </div>
+        ))}
+        {(!data?.findings || data.findings.length === 0) && <div className="py-6 text-green-700">No security findings returned.</div>}
+      </div>
+    </div>
+  );
+}
+
+function Backups({ data, projectName, reload, setActionResult }) {
+  const restoreBackup = async (id) => {
+    try {
+      setActionResult({ status: 'running', label: `restore ${id}` });
+      const res = await backup.restore(projectName, id);
+      setActionResult({ status: 'done', label: `restore ${id}`, result: res.data });
+      reload();
+    } catch (err) {
+      setActionResult({ status: 'error', label: `restore ${id}`, error: err.message });
+    }
+  };
+  const deleteBackup = async (id) => {
+    try {
+      setActionResult({ status: 'running', label: `delete ${id}` });
+      const res = await backup.delete(id);
+      setActionResult({ status: 'done', label: `delete ${id}`, result: res.data });
+      reload();
+    } catch (err) {
+      setActionResult({ status: 'error', label: `delete ${id}`, error: err.message });
+    }
+  };
+  return (
+    <div className="space-y-2">
+      {Array.isArray(data) && data.map(b => (
+        <div key={b.id} className="flex flex-col gap-2 rounded-md border border-gray-200 p-3 text-sm md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="font-mono">{b.id}</div>
+            <div className="text-xs text-gray-500">{(b.size_bytes / 1024 / 1024).toFixed(1)} MB · {new Date(b.created_at).toLocaleString()}</div>
+          </div>
+          <div className="flex gap-2">
+            <button title="Restore this backup, stop running containers first, then start the project." onClick={() => restoreBackup(b.id)} className="mini-button">Restore</button>
+            <button title="Delete this backup archive." onClick={() => deleteBackup(b.id)} className="mini-danger">Delete</button>
+          </div>
+        </div>
+      ))}
+      {(!data || data.length === 0) && <div className="py-6 text-gray-500">No backups found.</div>}
+    </div>
+  );
+}
+
+function Databases({ data }) {
+  return (
+    <div className="space-y-2">
+      {data?.checks?.map((c, i) => (
+        <div key={i} className="rounded-md border border-gray-200 p-3 text-sm">
+          <Badge tone={c.healthy ? 'green' : 'red'}>{c.healthy ? 'healthy' : 'unhealthy'}</Badge>
+          <span className="ml-2 font-mono">{c.container}</span>
+          <span className="ml-2 text-gray-500">{c.engine}</span>
+          {c.output && <pre className="mt-2 whitespace-pre-wrap font-mono text-xs text-gray-500">{c.output}</pre>}
+        </div>
+      ))}
+      {(!data?.checks || data.checks.length === 0) && <div className="py-6 text-gray-500">No supported database containers found.</div>}
+    </div>
+  );
+}
+
+function Processes({ data }) {
+  return (
+    <div className="space-y-3">
+      {data?.processes?.map(p => (
+        <div key={p.container}>
+          <div className="mb-1 font-mono text-sm">{p.container}</div>
+          <pre className="max-h-72 overflow-auto rounded-md bg-gray-950 p-3 font-mono text-xs text-gray-100 whitespace-pre-wrap">{p.output}</pre>
+        </div>
+      ))}
+      {(!data?.processes || data.processes.length === 0) && <div className="py-6 text-gray-500">No process output returned.</div>}
+    </div>
+  );
+}
+
+function Info({ label, value }) {
+  return (
+    <div className="rounded-md border border-gray-200 p-3">
+      <div className="text-xs uppercase text-gray-500">{label}</div>
+      <div className="mt-1 break-all font-mono text-sm text-gray-800">{value}</div>
+    </div>
+  );
+}
+
+function Field({ label, title, children }) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block font-medium text-gray-700" title={title}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function JsonBlock({ value }) {
+  return <pre className="max-h-[560px] overflow-auto rounded-md bg-gray-950 p-4 font-mono text-xs text-gray-100 whitespace-pre-wrap">{JSON.stringify(value, null, 2)}</pre>;
+}
+
+function Badge({ tone = 'gray', children }) {
+  const tones = {
+    gray: 'bg-gray-100 text-gray-700',
+    green: 'bg-green-100 text-green-800',
+    red: 'bg-red-100 text-red-800',
+    amber: 'bg-amber-100 text-amber-800',
+    blue: 'bg-blue-100 text-blue-800',
+    cyan: 'bg-cyan-100 text-cyan-800',
+    violet: 'bg-violet-100 text-violet-800',
+  };
+  return <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${tones[tone] || tones.gray}`}>{children}</span>;
+}
+
+function ActionResult({ result, onDismiss }) {
+  const tone = result.status === 'running' ? 'border-blue-200 bg-blue-50 text-blue-900' :
+    result.status === 'error' ? 'border-red-200 bg-red-50 text-red-900' :
+    'border-green-200 bg-green-50 text-green-900';
+  return (
+    <div className={`rounded border px-4 py-3 text-sm ${tone}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="font-medium">{result.status === 'running' ? `Running ${result.label}...` : result.status === 'error' ? `Error during ${result.label}` : `${result.label} completed`}</div>
+          {result.error && <div className="mt-1">{result.error}</div>}
+          {result.result?.output && <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-xs">{result.result.output}</pre>}
+        </div>
+        <button title="Dismiss this message." onClick={onDismiss} className="text-sm underline">dismiss</button>
+      </div>
+    </div>
+  );
+}
+
+function tabTitle(tab) {
+  const titles = {
+    overview: 'Project files and running containers.',
+    sources: 'Classify custom builds, public registry images, and private images.',
+    logs: 'Read docker compose logs with optional container and tail filters.',
+    stats: 'Show docker stats for running containers.',
+    security: 'Scan images and audit compose configuration.',
+    backups: 'List, restore, and delete project backups.',
+    databases: 'Check supported database containers.',
+    inspect: 'Show docker inspect JSON.',
+    processes: 'Show docker top output.',
+  };
+  return titles[tab] || tab;
+}
+
+function accessTone(access) {
+  if (access === 'public' || access === 'private-authenticated' || access === 'local-build') return 'green';
+  if (access === 'private-login-required') return 'amber';
+  if (access === 'not-found' || access === 'inaccessible') return 'red';
+  return 'gray';
+}
+
+function severityTone(severity) {
+  if (severity === 'critical' || severity === 'high') return 'red';
+  if (severity === 'medium') return 'amber';
+  if (severity === 'low') return 'blue';
+  return 'gray';
 }
