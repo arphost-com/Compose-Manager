@@ -42,6 +42,8 @@ func (e *Engine) RunHook(phase, command string, project *Project) *OpResult {
 	}
 
 	start := time.Now()
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	// The hook path is resolved under the configured hooks directory and checked executable.
 	cmd := exec.Command(path, project.Name, project.Dir)
 	cmd.Dir = project.Dir
 

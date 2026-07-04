@@ -44,7 +44,7 @@ validate:compose:
 test:server:
   stage: test
   script:
-    - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e GOCACHE=/tmp/go-build -e GOMODCACHE=/tmp/go-mod -v "$PWD/server:/src" -w /src golang:1.23-alpine go test ./...
+    - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e GOCACHE=/tmp/go-build -e GOMODCACHE=/tmp/go-mod -v "$PWD/server:/src" -w /src golang:1.25-alpine go test ./...
 
 test:web:
   stage: test
@@ -155,8 +155,10 @@ security:image_scan:
       if [ -f .trivyignore ]; then
         ignore_args="--ignorefile .trivyignore"
       fi
-      server_image="$(docker compose -p "${CI_COMPOSE_PROJECT_NAME}" images -q server)"
-      web_image="$(docker compose -p "${CI_COMPOSE_PROJECT_NAME}" images -q web)"
+      server_image="${CI_COMPOSE_PROJECT_NAME}-server"
+      web_image="${CI_COMPOSE_PROJECT_NAME}-web"
+      docker image inspect "${server_image}" >/dev/null
+      docker image inspect "${web_image}" >/dev/null
       trivy image --scanners vuln,secret,misconfig --severity HIGH,CRITICAL ${ignore_args} --format json --output trivy-server-image-report.json --exit-code 1 "${server_image}"
       trivy image --scanners vuln,secret,misconfig --severity HIGH,CRITICAL ${ignore_args} --format json --output trivy-web-image-report.json --exit-code 1 "${web_image}"
   artifacts:
