@@ -8,10 +8,17 @@ services:
       API_KEY: "${API_KEY:?API_KEY required}"
       ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
+      DB_HOST: "mariadb"
+      DB_PORT: "3306"
+      DB_NAME: "${DB_NAME:-compose_manager}"
+      DB_USER: "${DB_USER:-compose_manager}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD required}"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD required}"
+      REDIS_DB: "${REDIS_DB:-0}"
+      CACHE_TTL_SECONDS: "${CACHE_TTL_SECONDS:-15}"
       HOOKS_DIR: "/state/hooks"
       BACKUP_DIR: "/state/backups"
-      USERS_FILE: "/state/users.json"
-      JOBS_DIR: "/state/jobs"
       DOCKER_CONFIG: "/state/docker-config"
       FRONTEND_EXTERNAL: "true"
     user: "${SERVER_USER:-1001:1001}"
@@ -21,6 +28,11 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${DOCKER_ROOT:-/home/debian/docker}:/docker
       - ${STATE_DIR:-/home/debian/.compose-manager}:/state
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   web:
@@ -29,4 +41,34 @@ services:
       - "${WEB_PORT:-8193}:8080"
     depends_on:
       - server
+    restart: unless-stopped
+
+  mariadb:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: "${DB_NAME:-compose_manager}"
+      MARIADB_USER: "${DB_USER:-compose_manager}"
+      MARIADB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD required}"
+      MARIADB_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD required}"
+    volumes:
+      - ${STATE_DIR:-/home/debian/.compose-manager}/mariadb:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD required}"]
+    volumes:
+      - ${STATE_DIR:-/home/debian/.compose-manager}/redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD required}"
     restart: unless-stopped

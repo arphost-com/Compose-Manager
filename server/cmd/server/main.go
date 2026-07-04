@@ -21,6 +21,7 @@ import (
 	"github.com/arphost-com/Compose-Manager/server/internal/skills/debug"
 	"github.com/arphost-com/Compose-Manager/server/internal/skills/frontend"
 	"github.com/arphost-com/Compose-Manager/server/internal/skills/security"
+	"github.com/arphost-com/Compose-Manager/server/internal/storage"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -34,15 +35,21 @@ func main() {
 
 	// Core engine
 	engine := core.NewEngine(cfg.Root, cfg.HooksDir)
-	jobs, err := core.NewJobManager(cfg.JobsDir)
+	appStore, err := storage.New(context.Background(), cfg.DatabaseDSN, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, cfg.CacheTTL)
 	if err != nil {
-		log.Fatalf("jobs init: %v", err)
+		log.Fatalf("storage init: %v", err)
 	}
-	userStore, err := cmauth.NewStore(cfg.UsersFile, cfg.AdminUsername, cfg.AdminPassword)
+	defer appStore.Close()
+	if err := appStore.ImportLegacyFiles(context.Background(), cfg.StateDir); err != nil {
+		log.Fatalf("legacy import: %v", err)
+	}
+
+	jobs := core.NewJobManager(appStore)
+	userStore, err := cmauth.NewStore(appStore, cfg.AdminUsername, cfg.AdminPassword)
 	if err != nil {
 		log.Fatalf("users init: %v", err)
 	}
-	sessionManager := cmauth.NewSessionManager(12 * time.Hour)
+	sessionManager := cmauth.NewSessionManager(appStore, 12*time.Hour)
 
 	// Skill registry
 	registry := skills.NewRegistry()
@@ -62,7 +69,7 @@ func main() {
 	}
 
 	// Handlers
-	projectHandler := handlers.NewProjectHandler(engine, jobs)
+	projectHandler := handlers.NewProjectHandler(engine, jobs, appStore)
 	skillHandler := handlers.NewSkillHandler(registry)
 	authHandler := handlers.NewAuthHandler(userStore, sessionManager)
 
@@ -113,6 +120,8 @@ func main() {
 			r.Post("/projects/{name}/update", projectHandler.Update)
 			r.Post("/projects/{name}/restart", projectHandler.Restart)
 			r.Post("/projects/{name}/jobs/{action}", projectHandler.StartJob)
+			r.Get("/projects/{name}/update-policy", projectHandler.GetUpdatePolicy)
+			r.Put("/projects/{name}/update-policy", projectHandler.SetUpdatePolicy)
 			r.Put("/projects/{name}/inactive", projectHandler.SetInactive)
 
 			// Bulk operations

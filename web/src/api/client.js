@@ -57,6 +57,8 @@ export const projects = {
   update: (name, timeout) => request(`/projects/${name}/update${timeout ? '?timeout=' + timeout : ''}`, { method: 'POST' }),
   restart: (name) => request(`/projects/${name}/restart`, { method: 'POST' }),
   startJob: (name, action, timeout) => request(`/projects/${name}/jobs/${action}${timeout ? '?timeout=' + timeout : ''}`, { method: 'POST' }),
+  updatePolicy: (name) => request(`/projects/${name}/update-policy`),
+  setUpdatePolicy: (name, body) => request(`/projects/${name}/update-policy`, { method: 'PUT', body: JSON.stringify(body) }),
   setInactive: (name, inactive) => request(`/projects/${name}/inactive`, { method: 'PUT', body: JSON.stringify({ inactive }) }),
   bulk: (action, body) => request(`/projects/bulk/${action}`, { method: 'POST', body: JSON.stringify(body) }),
 };

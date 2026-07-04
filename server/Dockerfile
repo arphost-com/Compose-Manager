@@ -7,7 +7,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /compose-manager-server ./cmd/server
 
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates curl docker-cli docker-cli-compose bash tar gzip
+RUN apk add --no-cache ca-certificates curl docker-cli docker-cli-compose bash tar gzip git
 RUN addgroup -g 1001 -S appgroup && \
     adduser -S appuser -u 1001 -G appgroup && \
     mkdir -p /home/appuser/.docker && \

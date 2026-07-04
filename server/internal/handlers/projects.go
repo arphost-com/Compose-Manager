@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/arphost-com/Compose-Manager/server/internal/core"
+	"github.com/arphost-com/Compose-Manager/server/internal/storage"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -13,11 +15,12 @@ import (
 type ProjectHandler struct {
 	Engine *core.Engine
 	Jobs   *core.JobManager
+	Store  *storage.Store
 }
 
 // NewProjectHandler creates a new ProjectHandler.
-func NewProjectHandler(engine *core.Engine, jobs *core.JobManager) *ProjectHandler {
-	return &ProjectHandler{Engine: engine, Jobs: jobs}
+func NewProjectHandler(engine *core.Engine, jobs *core.JobManager, store *storage.Store) *ProjectHandler {
+	return &ProjectHandler{Engine: engine, Jobs: jobs, Store: store}
 }
 
 // Create creates a new compose project under the configured root.
@@ -33,12 +36,14 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	h.Store.DeleteCache(r.Context(), "projects:list")
+	h.applyPolicy(project)
 	writeJSON(w, http.StatusCreated, project)
 }
 
 // List returns all discovered projects.
 func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
-	projects, err := h.Engine.DiscoverProjects()
+	projects, err := h.discoverProjects(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -63,7 +68,7 @@ func (h *ProjectHandler) Images(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"project": project.Name,
-		"images":  h.Engine.CheckImageSources(project),
+		"images":  h.checkImageSources(r.Context(), project),
 	})
 }
 
@@ -79,6 +84,7 @@ func (h *ProjectHandler) Get(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.applyPolicy(project)
 	writeJSON(w, http.StatusOK, project)
 }
 
@@ -130,6 +136,10 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	timeout := h.getTimeout(r)
+	if h.noUpdates(project) {
+		writeJSON(w, http.StatusOK, skippedUpdateResults(project))
+		return
+	}
 	results := h.Engine.Update(project, timeout)
 	writeJSON(w, http.StatusOK, results)
 }
@@ -152,12 +162,59 @@ func (h *ProjectHandler) StartJob(w http.ResponseWriter, r *http.Request) {
 	}
 	action := chi.URLParam(r, "action")
 	timeout := h.getTimeout(r)
+	if action == "update" && h.noUpdates(project) {
+		policy := h.Store.ResolveUpdatePolicy(*project)
+		output := "updates skipped: " + policy.NoUpdatesReason + "\n"
+		job, err := h.Jobs.StartSkipped(project, action, output)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusAccepted, job)
+		return
+	}
 	job, err := h.Jobs.Start(h.Engine, project, action, timeout)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusAccepted, job)
+}
+
+// GetUpdatePolicy returns the update policy for a project.
+func (h *ProjectHandler) GetUpdatePolicy(w http.ResponseWriter, r *http.Request) {
+	project, err := h.getProject(w, r)
+	if err != nil {
+		return
+	}
+	policy, err := h.Store.GetProjectPolicy(r.Context(), *project)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, policy)
+}
+
+// SetUpdatePolicy updates the manual update policy for a project.
+func (h *ProjectHandler) SetUpdatePolicy(w http.ResponseWriter, r *http.Request) {
+	project, err := h.getProject(w, r)
+	if err != nil {
+		return
+	}
+	var body struct {
+		Mode  string `json:"mode"`
+		Notes string `json:"notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	policy, err := h.Store.SetProjectPolicy(r.Context(), *project, body.Mode, body.Notes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, policy)
 }
 
 // GetJob returns a tracked compose action with its current or completed output.
@@ -196,6 +253,7 @@ func (h *ProjectHandler) SetInactive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.Store.DeleteCache(r.Context(), "projects:list")
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"project":  name,
@@ -213,7 +271,7 @@ func (h *ProjectHandler) BulkAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	projects, err := h.Engine.DiscoverProjects()
+	projects, err := h.discoverProjects(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -235,6 +293,10 @@ func (h *ProjectHandler) BulkAction(w http.ResponseWriter, r *http.Request) {
 		case "restart":
 			result = h.Engine.Restart(&p)
 		case "update":
+			if h.noUpdates(&p) {
+				results = append(results, skippedUpdateResults(&p)...)
+				continue
+			}
 			subResults := h.Engine.Update(&p, req.Timeout)
 			results = append(results, subResults...)
 			continue
@@ -296,6 +358,7 @@ func (h *ProjectHandler) getProject(w http.ResponseWriter, r *http.Request) (*co
 		}
 		return nil, err
 	}
+	h.applyPolicy(project)
 	return project, nil
 }
 
@@ -307,4 +370,61 @@ func (h *ProjectHandler) getTimeout(r *http.Request) int {
 		}
 	}
 	return 0
+}
+
+func (h *ProjectHandler) discoverProjects(ctx context.Context) ([]core.Project, error) {
+	var cached []core.Project
+	if h.Store.GetJSON(ctx, "projects:list", &cached) {
+		return cached, nil
+	}
+	projects, err := h.Engine.DiscoverProjects()
+	if err != nil {
+		return nil, err
+	}
+	for i := range projects {
+		h.applyPolicy(&projects[i])
+	}
+	h.Store.SetJSON(ctx, "projects:list", projects, h.Store.CacheTTL)
+	return projects, nil
+}
+
+func (h *ProjectHandler) applyPolicy(project *core.Project) {
+	if project == nil {
+		return
+	}
+	project.UpdatePolicy = h.Store.ResolveUpdatePolicy(*project)
+}
+
+func (h *ProjectHandler) noUpdates(project *core.Project) bool {
+	if project == nil {
+		return false
+	}
+	policy := h.Store.ResolveUpdatePolicy(*project)
+	project.UpdatePolicy = policy
+	return policy.EffectivePolicy == core.UpdatePolicyNoUpdates
+}
+
+func skippedUpdateResults(project *core.Project) []core.OpResult {
+	reason := "updates disabled"
+	if project.UpdatePolicy.NoUpdatesReason != "" {
+		reason = project.UpdatePolicy.NoUpdatesReason
+	}
+	return []core.OpResult{{
+		Project:  project.Name,
+		Action:   "update",
+		Success:  true,
+		Output:   "updates skipped: " + reason + "\n",
+		ExitCode: 0,
+	}}
+}
+
+func (h *ProjectHandler) checkImageSources(ctx context.Context, project *core.Project) []core.ImageSource {
+	key := "project_images:" + project.Name
+	var cached []core.ImageSource
+	if h.Store.GetJSON(ctx, key, &cached) {
+		return cached
+	}
+	images := h.Engine.CheckImageSources(project)
+	h.Store.SetJSON(ctx, key, images, h.Store.CacheTTL)
+	return images
 }

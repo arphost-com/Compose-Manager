@@ -56,6 +56,7 @@ export default function Dashboard() {
 
   const running = projectList.filter(p => p.running).length;
   const inactive = projectList.filter(p => p.inactive).length;
+  const noUpdates = projectList.filter(p => p.update_policy?.effective_policy === 'no_updates').length;
   const customServices = projectList.reduce((sum, p) => sum + (p.image_sources || []).filter(s => s.source_type === 'custom').length, 0);
   const registryServices = projectList.reduce((sum, p) => sum + (p.image_sources || []).filter(s => s.source_type === 'registry').length, 0);
 
@@ -163,10 +164,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <StatCard label="Projects" value={projectList.length} />
         <StatCard label="Running" value={running} />
         <StatCard label="Inactive" value={inactive} />
+        <StatCard label="No updates" value={noUpdates} />
         <StatCard label="Registry services" value={registryServices} />
         <StatCard label="Custom builds" value={customServices} />
       </div>
@@ -257,6 +259,7 @@ export default function Dashboard() {
                     <div className="mt-1 flex gap-1">
                       {p.inactive && <Badge tone="amber">inactive</Badge>}
                       {p.has_hook?.update && <Badge tone="cyan">update hook</Badge>}
+                      {p.update_policy?.effective_policy === 'no_updates' && <Badge tone="amber">no updates</Badge>}
                     </div>
                   </td>
                   <td className="py-3"><Badge tone={p.running ? 'green' : 'gray'}>{p.running ? 'running' : 'stopped'}</Badge></td>
@@ -268,7 +271,7 @@ export default function Dashboard() {
                   <td className="py-3">
                     <div className="flex justify-end gap-1">
                       {ACTIONS.map(action => (
-                        <button key={action.key} title={action.title} onClick={() => runAction(p.name, action.key)} className={action.key === 'down' ? 'mini-danger' : 'mini-button'}>
+                        <button key={action.key} title={action.key === 'update' && p.update_policy?.effective_policy === 'no_updates' ? 'Updates are disabled for this project; this records a skipped session.' : action.title} onClick={() => runAction(p.name, action.key)} className={action.key === 'down' ? 'mini-danger' : 'mini-button'}>
                           {action.label}
                         </button>
                       ))}

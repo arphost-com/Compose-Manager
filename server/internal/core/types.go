@@ -4,14 +4,15 @@ import "time"
 
 // Project represents a discovered Docker Compose project.
 type Project struct {
-	Name         string          `json:"name"`
-	Dir          string          `json:"dir"`
-	ComposeFile  string          `json:"compose_file"`
-	Inactive     bool            `json:"inactive"`
-	Running      bool            `json:"running"`
-	Containers   []Container     `json:"containers,omitempty"`
-	HasHook      map[string]bool `json:"has_hook,omitempty"`
-	ImageSources []ImageSource   `json:"image_sources,omitempty"`
+	Name         string              `json:"name"`
+	Dir          string              `json:"dir"`
+	ComposeFile  string              `json:"compose_file"`
+	Inactive     bool                `json:"inactive"`
+	Running      bool                `json:"running"`
+	Containers   []Container         `json:"containers,omitempty"`
+	HasHook      map[string]bool     `json:"has_hook,omitempty"`
+	ImageSources []ImageSource       `json:"image_sources,omitempty"`
+	UpdatePolicy ProjectUpdatePolicy `json:"update_policy,omitempty"`
 }
 
 // Container represents a running Docker container.
@@ -35,6 +36,21 @@ type ImageSource struct {
 	Tag          string `json:"tag,omitempty"`
 	Access       string `json:"access,omitempty"`
 	Message      string `json:"message,omitempty"`
+}
+
+// ProjectUpdatePolicy controls whether Compose Manager should attempt image updates.
+type ProjectUpdatePolicy struct {
+	Mode               string `json:"mode"`
+	EffectivePolicy    string `json:"effective_policy"`
+	SourceType         string `json:"source_type,omitempty"`
+	SourceURL          string `json:"source_url,omitempty"`
+	NoUpdatesReason    string `json:"no_updates_reason,omitempty"`
+	Notes              string `json:"notes,omitempty"`
+	AutoDetected       bool   `json:"auto_detected"`
+	DetectedPolicy     string `json:"detected_policy,omitempty"`
+	DetectedSourceType string `json:"detected_source_type,omitempty"`
+	DetectedSourceURL  string `json:"detected_source_url,omitempty"`
+	DetectedReason     string `json:"detected_reason,omitempty"`
 }
 
 // CreateProjectRequest creates a compose project folder under the configured root.

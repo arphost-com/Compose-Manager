@@ -4,12 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -32,16 +30,19 @@ type ActionJob struct {
 }
 
 type JobManager struct {
-	mu   sync.RWMutex
-	jobs map[string]*ActionJob
-	dir  string
+	mu    sync.RWMutex
+	jobs  map[string]*ActionJob
+	store JobStore
 }
 
-func NewJobManager(dir string) (*JobManager, error) {
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		return nil, err
-	}
-	return &JobManager{jobs: make(map[string]*ActionJob), dir: dir}, nil
+type JobStore interface {
+	SaveJob(context.Context, *ActionJob) error
+	LoadJob(context.Context, string) (*ActionJob, error)
+	ListJobs(context.Context) ([]ActionJob, error)
+}
+
+func NewJobManager(store JobStore) *JobManager {
+	return &JobManager{jobs: make(map[string]*ActionJob), store: store}
 }
 
 func (m *JobManager) Start(engine *Engine, project *Project, action string, timeoutSecs int) (*ActionJob, error) {
@@ -66,7 +67,31 @@ func (m *JobManager) Start(engine *Engine, project *Project, action string, time
 	m.mu.Unlock()
 
 	go m.run(engine, project, job, timeoutSecs)
-	return jobSnapshot(job), nil
+	return JobSnapshot(job), nil
+}
+
+func (m *JobManager) StartSkipped(project *Project, action, output string) (*ActionJob, error) {
+	id, err := randomJobID()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	job := &ActionJob{
+		ID:        id,
+		Project:   project.Name,
+		Action:    action,
+		Status:    "skipped",
+		Success:   true,
+		ExitCode:  0,
+		Output:    output,
+		StartedAt: now,
+		EndedAt:   now,
+		Duration:  "0s",
+	}
+	if m.store != nil {
+		_ = m.store.SaveJob(context.Background(), job)
+	}
+	return JobSnapshot(job), nil
 }
 
 func (m *JobManager) Get(id string) (*ActionJob, bool) {
@@ -74,35 +99,37 @@ func (m *JobManager) Get(id string) (*ActionJob, bool) {
 	job, ok := m.jobs[id]
 	m.mu.RUnlock()
 	if !ok {
-		job, err := m.load(id)
+		if m.store == nil {
+			return nil, false
+		}
+		job, err := m.store.LoadJob(context.Background(), id)
 		if err != nil {
 			return nil, false
 		}
 		return job, true
 	}
-	return jobSnapshot(job), true
+	return JobSnapshot(job), true
 }
 
 func (m *JobManager) List() []ActionJob {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	jobs := make([]ActionJob, 0, len(m.jobs))
 	for _, job := range m.jobs {
-		jobs = append(jobs, *jobSnapshot(job))
+		jobs = append(jobs, *JobSnapshot(job))
 	}
-	entries, err := os.ReadDir(m.dir)
-	if err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-				continue
-			}
-			id := strings.TrimSuffix(entry.Name(), ".json")
-			if _, ok := m.jobs[id]; ok {
-				continue
-			}
-			if job, err := m.load(id); err == nil {
-				jobs = append(jobs, *job)
+	live := make(map[string]struct{}, len(m.jobs))
+	for id := range m.jobs {
+		live[id] = struct{}{}
+	}
+	m.mu.RUnlock()
+
+	if m.store != nil {
+		stored, err := m.store.ListJobs(context.Background())
+		if err == nil {
+			for _, job := range stored {
+				if _, ok := live[job.ID]; !ok {
+					jobs = append(jobs, job)
+				}
 			}
 		}
 	}
@@ -155,35 +182,18 @@ func (m *JobManager) run(engine *Engine, project *Project, job *ActionJob, timeo
 	case "update":
 		runUpdateJob(engine, project, job, timeoutSecs)
 	}
-	if !jobSnapshot(job).Success {
+	if !JobSnapshot(job).Success {
 		updateJob(job, func(j *ActionJob) {
 			j.Status = "failed"
 		})
 	}
 }
 
-func (m *JobManager) load(id string) (*ActionJob, error) {
-	data, err := os.ReadFile(filepath.Join(m.dir, id+".json"))
-	if err != nil {
-		return nil, err
-	}
-	var job ActionJob
-	if err := json.Unmarshal(data, &job); err != nil {
-		return nil, err
-	}
-	return &job, nil
-}
-
 func (m *JobManager) save(job *ActionJob) error {
-	data, err := json.MarshalIndent(jobSnapshot(job), "", "  ")
-	if err != nil {
-		return err
+	if m.store == nil {
+		return nil
 	}
-	tmp := filepath.Join(m.dir, job.ID+".json.tmp")
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, filepath.Join(m.dir, job.ID+".json"))
+	return m.store.SaveJob(context.Background(), job)
 }
 
 func runUpdateJob(engine *Engine, project *Project, job *ActionJob, timeoutSecs int) {
@@ -301,7 +311,7 @@ func appendJobOutput(job *ActionJob, text string) {
 	}
 }
 
-func jobSnapshot(job *ActionJob) *ActionJob {
+func JobSnapshot(job *ActionJob) *ActionJob {
 	job.mu.RLock()
 	defer job.mu.RUnlock()
 

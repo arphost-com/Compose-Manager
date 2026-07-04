@@ -55,12 +55,13 @@ Entry point: `server/cmd/server/main.go`
 
 Main packages:
 
-- `server/internal/core/` - discovery, compose execution, hooks, project creation, image source classification, registry login.
+- `server/internal/core/` - discovery, compose execution, hooks, project creation, image source classification, registry login, update policy detection.
 - `server/internal/handlers/` - project, system, registry, and skill HTTP handlers.
 - `server/internal/middleware/` - API key auth.
 - `server/internal/skills/` - modular skill registry and built-in skills.
+- `server/internal/storage/` - MariaDB schema, Redis cache helpers, users/jobs/project settings persistence, and legacy flat-file import.
 
-Core routes are protected with `X-API-Key`; `/health` is public.
+Core routes are protected with login bearer sessions or legacy `X-API-Key`; `/health` and `POST /api/v1/auth/login` are public.
 
 Core project routes:
 
@@ -70,12 +71,17 @@ GET    /api/v1/projects
 GET    /api/v1/projects/{name}
 GET    /api/v1/projects/{name}/images
 GET    /api/v1/projects/{name}/status
+GET    /api/v1/projects/{name}/update-policy
+PUT    /api/v1/projects/{name}/update-policy
 POST   /api/v1/projects/{name}/pull
 POST   /api/v1/projects/{name}/up
 POST   /api/v1/projects/{name}/down
 POST   /api/v1/projects/{name}/update
 POST   /api/v1/projects/{name}/restart
+POST   /api/v1/projects/{name}/jobs/{action}
 PUT    /api/v1/projects/{name}/inactive
+GET    /api/v1/jobs
+GET    /api/v1/jobs/{jobId}
 POST   /api/v1/projects/bulk/{action}
 POST   /api/v1/prune
 POST   /api/v1/registries/login
@@ -115,7 +121,8 @@ Important files:
 
 - `web/src/pages/Dashboard.jsx` - main management console, filters, bulk actions, creation, registry login.
 - `web/src/pages/ProjectDetail.jsx` - project actions, image sources, logs, stats, security, backups, DB checks, inspect, processes.
-- `web/src/pages/Settings.jsx` - browser-stored API key.
+- `web/src/pages/Login.jsx` - username/password login.
+- `web/src/pages/Settings.jsx` - account info, logout, and admin user management.
 - `web/src/api/client.js` - API client.
 - `web/src/index.css` - Tailwind component classes.
 
@@ -134,10 +141,15 @@ Services:
 | --- | --- | --- |
 | `server` | 8192 internal | Go API server |
 | `web` | `${WEB_PORT:-8193}:8080` | React SPA via nginx |
+| `mariadb` | internal | Users, job history, project settings |
+| `redis` | internal | Sessions and cached projects/images/jobs/settings |
 
 Required environment:
 
 - `API_KEY`
+- `DB_PASSWORD`
+- `DB_ROOT_PASSWORD`
+- `REDIS_PASSWORD`
 - `DOCKER_ROOT`
 - `DOCKER_GID`
 - `SERVER_USER`
@@ -153,6 +165,15 @@ Docker credentials from registry login are stored under:
 
 Do not store Compose Manager's own persistent state under the managed Docker root. On docker02 the app checkout is `/home/debian/docker/compose-manager`, while persistent state is `/home/debian/.compose-manager` and is mounted into the containers at `/state`.
 
+Runtime state:
+
+- MariaDB data: `/home/debian/.compose-manager/mariadb`
+- Redis append-only data: `/home/debian/.compose-manager/redis`
+- Hooks: `/home/debian/.compose-manager/hooks`
+- Backups and database dumps: `/home/debian/.compose-manager/backups`
+- Docker registry credentials: `/home/debian/.compose-manager/docker-config`
+- Legacy `/state/users.json` and `/state/jobs/*.json` are imported into MariaDB on startup if present; the app no longer writes users or action history as flat files.
+
 ## GitLab Pipeline
 
 `.gitlab-ci.yml` targets the `docker02` shell runner by default.
@@ -162,6 +183,7 @@ Do not store Compose Manager's own persistent state under the managed Docker roo
 - Security jobs expect ARPHost runner tools on `PATH`: `semgrep`, `trivy`, `gitleaks`, `trufflehog`, and `dependency-check`.
 - `deploy:docker02` is manual-only. It syncs the repo to `/home/debian/docker/compose-manager`, writes `.env` from CI variables, and runs Compose as the `debian` user.
 - `COMPOSE_MANAGER_API_KEY` must be set as a masked GitLab CI/CD variable.
+- `COMPOSE_MANAGER_DB_PASSWORD`, `COMPOSE_MANAGER_DB_ROOT_PASSWORD`, and `COMPOSE_MANAGER_REDIS_PASSWORD` must be set as masked GitLab CI/CD variables.
 - `smoke:docker02` runs after a completed manual deploy.
 
 ## Security Guardrails
@@ -184,16 +206,30 @@ Server env vars:
 | `API_KEY` | none | yes |
 | `ADMIN_USERNAME` | `admin` | no |
 | `ADMIN_PASSWORD` | API key bootstrap fallback | no |
+| `DATABASE_DSN` | derived from DB vars | no |
+| `DB_HOST` | none | yes if `DATABASE_DSN` unset |
+| `DB_PORT` | `3306` | no |
+| `DB_NAME` | none | yes if `DATABASE_DSN` unset |
+| `DB_USER` | none | yes if `DATABASE_DSN` unset |
+| `DB_PASSWORD` | none | yes if `DATABASE_DSN` unset |
+| `REDIS_ADDR` | `redis:6379` | no |
+| `REDIS_PASSWORD` | none | yes |
+| `REDIS_DB` | `0` | no |
+| `CACHE_TTL_SECONDS` | `15` | no |
 | `ROOT` | `/docker` | no |
 | `STATE_DIR` | `$HOME/.compose-manager` | no |
 | `PORT` | `8192` | no |
 | `HOOKS_DIR` | `<STATE_DIR>/hooks` | no |
 | `BACKUP_DIR` | `<STATE_DIR>/backups` | no |
-| `USERS_FILE` | `<STATE_DIR>/users.json` | no |
-| `JOBS_DIR` | `<STATE_DIR>/jobs` | no |
 | `DOCKER_CONFIG` | Docker default | no |
 
-If `<STATE_DIR>/users.json` does not exist, the server creates the first admin from `ADMIN_USERNAME` and `ADMIN_PASSWORD`. If `ADMIN_PASSWORD` is empty, it uses `API_KEY` as the bootstrap password. Rotate or add users from the Settings page after first login.
+If the MariaDB `users` table is empty, the server creates the first admin from `ADMIN_USERNAME` and `ADMIN_PASSWORD`. If `ADMIN_PASSWORD` is empty, it uses `API_KEY` as the bootstrap password. Rotate or add users from the Settings page after first login.
+
+Update policies:
+
+- `auto`: default. Build-only projects from GitHub/GitLab with no registry image are automatically treated as `no_updates`.
+- `allow`: always permit update actions.
+- `no_updates`: skip update actions and record a skipped action session with the reason.
 
 CLI config files load in this order:
 

@@ -1,20 +1,20 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/arphost-com/Compose-Manager/server/internal/storage"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -37,33 +37,19 @@ type PublicUser struct {
 }
 
 type Store struct {
-	path string
-	mu   sync.RWMutex
-	data userData
+	store *storage.Store
 }
 
-type userData struct {
-	Users []User `json:"users"`
-}
-
-func NewStore(path, adminUsername, adminPassword string) (*Store, error) {
-	s := &Store{path: path}
-	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+func NewStore(store *storage.Store, adminUsername, adminPassword string) (*Store, error) {
+	s := &Store{store: store}
+	ctx := context.Background()
+	count, err := s.userCount(ctx)
+	if err != nil {
 		return nil, err
 	}
-	if err := s.load(); err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
+	if count == 0 {
 		if strings.TrimSpace(adminPassword) == "" {
 			return nil, fmt.Errorf("no users exist and no bootstrap admin password was provided")
-		}
-		if err := s.CreateUser(adminUsername, adminPassword, RoleAdmin); err != nil {
-			return nil, err
-		}
-	} else if len(s.data.Users) == 0 {
-		if strings.TrimSpace(adminPassword) == "" {
-			return nil, fmt.Errorf("users file is empty and no bootstrap admin password was provided")
 		}
 		if err := s.CreateUser(adminUsername, adminPassword, RoleAdmin); err != nil {
 			return nil, err
@@ -74,47 +60,55 @@ func NewStore(path, adminUsername, adminPassword string) (*Store, error) {
 
 func (s *Store) Authenticate(username, password string) (PublicUser, bool) {
 	username = normalizeUsername(username)
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, user := range s.data.Users {
-		if subtle.ConstantTimeCompare([]byte(user.Username), []byte(username)) != 1 {
-			continue
-		}
-		if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
-			return PublicUser{}, false
-		}
-		return publicUser(user), true
+	var user User
+	err := s.store.DB.QueryRowContext(context.Background(), `SELECT username, password_hash, role, created_at FROM users WHERE username=?`, username).
+		Scan(&user.Username, &user.PasswordHash, &user.Role, &user.CreatedAt)
+	if err != nil {
+		return PublicUser{}, false
 	}
-	return PublicUser{}, false
+	if subtle.ConstantTimeCompare([]byte(user.Username), []byte(username)) != 1 {
+		return PublicUser{}, false
+	}
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+		return PublicUser{}, false
+	}
+	return publicUser(user), true
 }
 
 func (s *Store) ListUsers() []PublicUser {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	ctx := context.Background()
+	var cached []PublicUser
+	if s.store.GetJSON(ctx, "users:list", &cached) {
+		return cached
+	}
 
-	users := make([]PublicUser, 0, len(s.data.Users))
-	for _, user := range s.data.Users {
-		users = append(users, publicUser(user))
+	rows, err := s.store.DB.QueryContext(ctx, `SELECT username, role, created_at FROM users ORDER BY username ASC`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	users := make([]PublicUser, 0)
+	for rows.Next() {
+		var user PublicUser
+		if err := rows.Scan(&user.Username, &user.Role, &user.CreatedAt); err == nil {
+			users = append(users, user)
+		}
 	}
 	sort.Slice(users, func(i, j int) bool {
 		return users[i].Username < users[j].Username
 	})
+	s.store.SetJSON(ctx, "users:list", users, s.store.CacheTTL)
 	return users
 }
 
 func (s *Store) GetUser(username string) (PublicUser, bool) {
 	username = normalizeUsername(username)
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	for _, user := range s.data.Users {
-		if user.Username == username {
-			return publicUser(user), true
-		}
-	}
-	return PublicUser{}, false
+	ctx := context.Background()
+	var user PublicUser
+	err := s.store.DB.QueryRowContext(ctx, `SELECT username, role, created_at FROM users WHERE username=?`, username).
+		Scan(&user.Username, &user.Role, &user.CreatedAt)
+	return user, err == nil
 }
 
 func (s *Store) CreateUser(username, password, role string) error {
@@ -123,28 +117,21 @@ func (s *Store) CreateUser(username, password, role string) error {
 	if err := validateUserInput(username, password); err != nil {
 		return err
 	}
-
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for _, user := range s.data.Users {
-		if user.Username == username {
+	ctx := context.Background()
+	_, err = s.store.DB.ExecContext(ctx, `INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)`,
+		username, string(hash), role, time.Now().UTC())
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			return fmt.Errorf("user already exists: %s", username)
 		}
+		return err
 	}
-
-	s.data.Users = append(s.data.Users, User{
-		Username:     username,
-		PasswordHash: string(hash),
-		Role:         role,
-		CreatedAt:    time.Now().UTC(),
-	})
-	return s.saveLocked()
+	s.store.DeleteCache(ctx, "users:list")
+	return nil
 }
 
 func (s *Store) SetPassword(username, password string) error {
@@ -156,77 +143,54 @@ func (s *Store) SetPassword(username, password string) error {
 	if err != nil {
 		return err
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i := range s.data.Users {
-		if s.data.Users[i].Username == username {
-			s.data.Users[i].PasswordHash = string(hash)
-			return s.saveLocked()
-		}
-	}
-	return fmt.Errorf("user not found: %s", username)
-}
-
-func (s *Store) DeleteUser(username string) error {
-	username = normalizeUsername(username)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	idx := -1
-	for i, user := range s.data.Users {
-		if user.Username == username {
-			idx = i
-			break
-		}
-	}
-	if idx == -1 {
-		return fmt.Errorf("user not found: %s", username)
-	}
-	if s.data.Users[idx].Role == RoleAdmin && s.adminCountLocked() <= 1 {
-		return fmt.Errorf("cannot delete the last admin user")
-	}
-
-	s.data.Users = append(s.data.Users[:idx], s.data.Users[idx+1:]...)
-	return s.saveLocked()
-}
-
-func (s *Store) load() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	data, err := os.ReadFile(s.path)
+	ctx := context.Background()
+	res, err := s.store.DB.ExecContext(ctx, `UPDATE users SET password_hash=? WHERE username=?`, string(hash), username)
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(data, &s.data); err != nil {
-		return err
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		return fmt.Errorf("user not found: %s", username)
 	}
 	return nil
 }
 
-func (s *Store) saveLocked() error {
-	tmp := s.path + ".tmp"
-	data, err := json.MarshalIndent(s.data, "", "  ")
+func (s *Store) DeleteUser(username string) error {
+	username = normalizeUsername(username)
+	ctx := context.Background()
+	var role string
+	err := s.store.DB.QueryRowContext(ctx, `SELECT role FROM users WHERE username=?`, username).Scan(&role)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("user not found: %s", username)
+	}
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path)
-}
-
-func (s *Store) adminCountLocked() int {
-	count := 0
-	for _, user := range s.data.Users {
-		if user.Role == RoleAdmin {
-			count++
+	if role == RoleAdmin {
+		admins, err := s.adminCount(ctx)
+		if err != nil {
+			return err
+		}
+		if admins <= 1 {
+			return fmt.Errorf("cannot delete the last admin user")
 		}
 	}
-	return count
+	if _, err := s.store.DB.ExecContext(ctx, `DELETE FROM users WHERE username=?`, username); err != nil {
+		return err
+	}
+	s.store.DeleteCache(ctx, "users:list")
+	return nil
+}
+
+func (s *Store) userCount(ctx context.Context) (int, error) {
+	var count int
+	err := s.store.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&count)
+	return count, err
+}
+
+func (s *Store) adminCount(ctx context.Context) (int, error) {
+	var count int
+	err := s.store.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role=?`, RoleAdmin).Scan(&count)
+	return count, err
 }
 
 func publicUser(user User) PublicUser {
@@ -268,22 +232,18 @@ func validateUserInput(username, password string) error {
 }
 
 type Session struct {
-	Token     string
-	User      PublicUser
-	ExpiresAt time.Time
+	Token     string     `json:"token"`
+	User      PublicUser `json:"user"`
+	ExpiresAt time.Time  `json:"expires_at"`
 }
 
 type SessionManager struct {
-	mu       sync.RWMutex
-	sessions map[string]Session
-	ttl      time.Duration
+	store *storage.Store
+	ttl   time.Duration
 }
 
-func NewSessionManager(ttl time.Duration) *SessionManager {
-	return &SessionManager{
-		sessions: make(map[string]Session),
-		ttl:      ttl,
-	}
+func NewSessionManager(store *storage.Store, ttl time.Duration) *SessionManager {
+	return &SessionManager{store: store, ttl: ttl}
 }
 
 func (m *SessionManager) Create(user PublicUser) (Session, error) {
@@ -296,19 +256,23 @@ func (m *SessionManager) Create(user PublicUser) (Session, error) {
 		User:      user,
 		ExpiresAt: time.Now().UTC().Add(m.ttl),
 	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.cleanupLocked(time.Now().UTC())
-	m.sessions[token] = session
+	raw, err := json.Marshal(session)
+	if err != nil {
+		return Session{}, err
+	}
+	if err := m.store.Redis.Set(context.Background(), "session:"+token, raw, m.ttl).Err(); err != nil {
+		return Session{}, err
+	}
 	return session, nil
 }
 
 func (m *SessionManager) Get(token string) (Session, bool) {
-	m.mu.RLock()
-	session, ok := m.sessions[token]
-	m.mu.RUnlock()
-	if !ok {
+	raw, err := m.store.Redis.Get(context.Background(), "session:"+token).Bytes()
+	if err != nil {
+		return Session{}, false
+	}
+	var session Session
+	if err := json.Unmarshal(raw, &session); err != nil {
 		return Session{}, false
 	}
 	if time.Now().UTC().After(session.ExpiresAt) {
@@ -319,17 +283,7 @@ func (m *SessionManager) Get(token string) (Session, bool) {
 }
 
 func (m *SessionManager) Delete(token string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.sessions, token)
-}
-
-func (m *SessionManager) cleanupLocked(now time.Time) {
-	for token, session := range m.sessions {
-		if now.After(session.ExpiresAt) {
-			delete(m.sessions, token)
-		}
-	}
+	_ = m.store.Redis.Del(context.Background(), "session:"+token).Err()
 }
 
 func BearerToken(r *http.Request) string {

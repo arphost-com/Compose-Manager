@@ -1,6 +1,6 @@
 # Compose Manager
 
-A robust Bash utility for managing **multiple Docker Compose projects** stored under a single root directory.
+A CLI and web dashboard for managing **multiple Docker Compose projects** stored under a single root directory.
 
 Designed for environments with **many stacks**, mixed lifecycle states, and special projects that require **custom update logic** (such as NetBox).
 
@@ -12,6 +12,7 @@ Designed for environments with **many stacks**, mixed lifecycle states, and spec
 - [Features](#features)
 - [Requirements](#requirements)
 - [Installation](#installation)
+- [Web Dashboard](#web-dashboard)
 - [Project Layout](#project-layout)
 - [Usage](#usage)
   - [Basic Commands](#basic-commands)
@@ -45,13 +46,19 @@ Always use standard Docker Compose commands:
 
 ### Update Behavior
 
-The `update` command has special override logic:
+The CLI `update` command has special override logic:
 
 - If a project has a custom hook named `post-update_<project>.sh`, **only the hook is run** for updates
 - Normal `docker compose pull` / `up -d` is **skipped** for that project
 - Projects **without** a hook use normal update behavior (pull + up)
 
 This makes it safe to manage projects like NetBox that can break if updated incorrectly.
+
+The web/API surface also supports per-project update policies:
+
+- `auto` - default. Build-only projects from GitHub/GitLab with no registry image are automatically marked `no_updates`.
+- `allow` - always permit update actions.
+- `no_updates` - skip update actions and save a skipped action session with the reason.
 
 ---
 
@@ -72,6 +79,10 @@ This makes it safe to manage projects like NetBox that can break if updated inco
 - **Dry-run mode** for safe simulation
 - **Automatic logging** to timestamped files
 - **Ctrl-C handling** - graceful interruption with summary output
+- **Web dashboard** for project creation, management, updates, statistics, logging, backups, database checks, image-source classification, registry login, and user management
+- **Live action sessions** for update/pull/start/stop/restart with saved logs
+- **MariaDB-backed state** for users, action history, and project settings
+- **Redis-backed sessions and cache** for project/image/job/settings reads
 
 ---
 
@@ -83,6 +94,8 @@ This makes it safe to manage projects like NetBox that can break if updated inco
 | Docker Compose v2 | Yes | Uses `docker compose` (not `docker-compose`) |
 | timeout | Optional | From coreutils; enables `--timeout` for pull/check |
 | Bash 4.0+ | Yes | Uses associative arrays and modern features |
+| MariaDB | Web/API | Provided by `docker-compose.yml` |
+| Redis | Web/API | Provided by `docker-compose.yml` |
 
 Verify your Docker Compose version:
 ```bash
@@ -116,11 +129,85 @@ mkdir -p /docker/.compose-manager/hooks
 
 ---
 
+## Web Dashboard
+
+The dashboard runs as a Docker Compose stack with four services:
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| `server` | `8192` internal | Go API server |
+| `web` | `${WEB_PORT:-8193}:8080` | React dashboard through nginx |
+| `mariadb` | internal | Users, action history, project settings |
+| `redis` | internal | Login sessions and cached project/image/job/settings data |
+
+Example `.env`:
+
+```bash
+API_KEY=change-me-to-a-secure-key
+ADMIN_USERNAME=admin
+# ADMIN_PASSWORD=change-me-to-a-different-secure-password
+
+DB_NAME=compose_manager
+DB_USER=compose_manager
+DB_PASSWORD=change-me-to-a-secure-database-password
+DB_ROOT_PASSWORD=change-me-to-a-secure-root-database-password
+REDIS_PASSWORD=change-me-to-a-secure-redis-password
+REDIS_DB=0
+CACHE_TTL_SECONDS=15
+
+DOCKER_ROOT=/home/debian/docker
+STATE_DIR=/home/debian/.compose-manager
+DOCKER_GID=998
+SERVER_USER=1001:1001
+WEB_PORT=8193
+```
+
+Start it:
+
+```bash
+docker compose --env-file .env up -d --build
+```
+
+Open `http://<host>:8193`. If the MariaDB users table is empty, the first admin is created from `ADMIN_USERNAME` and `ADMIN_PASSWORD`. If `ADMIN_PASSWORD` is unset, the bootstrap password is `API_KEY`; rotate or add users from Settings after first login.
+
+Persistent state is stored under `STATE_DIR`:
+
+| Path | Purpose |
+|------|---------|
+| `mariadb/` | MariaDB data for users, jobs, project settings |
+| `redis/` | Redis append-only data for sessions/cache |
+| `hooks/` | Update hooks used by the API server |
+| `backups/` | Project backups and database dumps |
+| `docker-config/` | Docker registry credentials from dashboard registry login |
+
+On docker02 the app checkout is `/home/debian/docker/compose-manager`, but persistent state is `/home/debian/.compose-manager`. Do not store Compose Manager state under the managed Docker root.
+
+Legacy files from earlier versions are imported on startup if present:
+
+- `/state/users.json`
+- `/state/jobs/*.json`
+
+The app no longer writes users, sessions, project settings, or action history as flat files.
+
+### Dashboard Update Policies
+
+The dashboard can mark a project as not updateable when it is built directly from a Dockerfile in a GitHub/GitLab checkout and has no registry image to pull. Auto detection checks the project Git remote and parsed Compose image/build metadata.
+
+| Mode | Behavior |
+|------|----------|
+| `auto` | Detect build-only GitHub/GitLab projects and mark them `no_updates`; otherwise allow updates |
+| `allow` | Always run update actions |
+| `no_updates` | Skip update actions and save a skipped action session with the configured reason |
+
+Use the Project Detail overview page to view or override the policy.
+
+---
+
 ## Project Layout
 
 ### Directory Structure
 
-The script expects projects organized under a root directory:
+The CLI expects projects organized under a root directory:
 
 ```
 /docker/                          # Root directory (configurable with --root)

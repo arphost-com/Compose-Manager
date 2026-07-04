@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -14,10 +15,13 @@ type Config struct {
 	StateDir      string
 	HooksDir      string
 	LogDir        string
-	UsersFile     string
-	JobsDir       string
 	AdminUsername string
 	AdminPassword string
+	DatabaseDSN   string
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
+	CacheTTL      time.Duration
 
 	// Backup skill
 	BackupDir string
@@ -33,15 +37,29 @@ func Load() (*Config, error) {
 		StateDir:      getEnv("STATE_DIR", ""),
 		HooksDir:      getEnv("HOOKS_DIR", ""),
 		LogDir:        getEnv("LOG_DIR", ""),
-		UsersFile:     getEnv("USERS_FILE", ""),
-		JobsDir:       getEnv("JOBS_DIR", ""),
 		AdminUsername: getEnv("ADMIN_USERNAME", "admin"),
 		AdminPassword: getEnv("ADMIN_PASSWORD", ""),
+		DatabaseDSN:   getEnv("DATABASE_DSN", ""),
+		RedisAddr:     getEnv("REDIS_ADDR", "redis:6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 		BackupDir:     getEnv("BACKUP_DIR", ""),
 	}
+	cfg.RedisDB, _ = strconv.Atoi(getEnv("REDIS_DB", "0"))
+	cacheTTL, _ := strconv.Atoi(getEnv("CACHE_TTL_SECONDS", "15"))
+	if cacheTTL < 1 {
+		cacheTTL = 15
+	}
+	cfg.CacheTTL = time.Duration(cacheTTL) * time.Second
 
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("API_KEY environment variable is required")
+	}
+
+	if cfg.DatabaseDSN == "" {
+		cfg.DatabaseDSN = databaseDSNFromEnv()
+	}
+	if cfg.DatabaseDSN == "" {
+		return nil, fmt.Errorf("DATABASE_DSN or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME environment variables are required")
 	}
 
 	if cfg.StateDir == "" {
@@ -55,14 +73,6 @@ func Load() (*Config, error) {
 
 	if cfg.BackupDir == "" {
 		cfg.BackupDir = filepath.Join(cfg.StateDir, "backups")
-	}
-
-	if cfg.UsersFile == "" {
-		cfg.UsersFile = filepath.Join(cfg.StateDir, "users.json")
-	}
-
-	if cfg.JobsDir == "" {
-		cfg.JobsDir = filepath.Join(cfg.StateDir, "jobs")
 	}
 
 	if cfg.AdminPassword == "" {
@@ -84,4 +94,16 @@ func defaultStateDir() string {
 		return filepath.Join(home, ".compose-manager")
 	}
 	return "/var/lib/compose-manager"
+}
+
+func databaseDSNFromEnv() string {
+	host := getEnv("DB_HOST", "")
+	user := getEnv("DB_USER", "")
+	password := getEnv("DB_PASSWORD", "")
+	name := getEnv("DB_NAME", "")
+	port := getEnv("DB_PORT", "3306")
+	if host == "" || user == "" || password == "" || name == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true&charset=utf8mb4,utf8", user, password, host, port, name)
 }

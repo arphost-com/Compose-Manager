@@ -21,11 +21,16 @@ export default function ProjectDetail() {
   const [actionResult, setActionResult] = useState(null);
   const [timeout, setTimeoutValue] = useState(300);
   const [logOptions, setLogOptions] = useState({ tail: 200, container: '', watch: false });
+  const [policyForm, setPolicyForm] = useState({ mode: 'auto', notes: '' });
 
   const fetchProject = async () => {
     try {
       const res = await projects.get(name);
       setProject(res.data);
+      setPolicyForm({
+        mode: res.data.update_policy?.mode || 'auto',
+        notes: res.data.update_policy?.notes || '',
+      });
     } catch (err) {
       setActionResult({ status: 'error', label: 'load project', error: err.message });
     } finally {
@@ -111,6 +116,18 @@ export default function ProjectDetail() {
     }
   };
 
+  const saveUpdatePolicy = async (event) => {
+    event.preventDefault();
+    try {
+      setActionResult({ status: 'running', label: 'update policy' });
+      const res = await projects.setUpdatePolicy(name, policyForm);
+      setProject({ ...project, update_policy: res.data });
+      setActionResult({ status: 'done', label: 'update policy', result: res.data });
+    } catch (err) {
+      setActionResult({ status: 'error', label: 'update policy', error: err.message });
+    }
+  };
+
   const createBackup = async () => {
     try {
       setActionResult({ status: 'running', label: 'backup' });
@@ -145,6 +162,7 @@ export default function ProjectDetail() {
             <Badge tone={project.running ? 'green' : 'gray'}>{project.running ? 'running' : 'stopped'}</Badge>
             {project.inactive && <Badge tone="amber">inactive</Badge>}
             {project.has_hook?.update && <Badge tone="cyan">update hook</Badge>}
+            {project.update_policy?.effective_policy === 'no_updates' && <Badge tone="amber">no updates</Badge>}
           </div>
           <p className="mt-1 font-mono text-xs text-gray-500">{project.dir}</p>
         </div>
@@ -163,7 +181,7 @@ export default function ProjectDetail() {
       <div className="section-panel">
         <div className="flex flex-wrap gap-2">
           {ACTIONS.map(action => (
-            <button key={action.key} title={action.title} onClick={() => runAction(action.key)} className={action.key === 'down' ? 'btn-danger' : 'btn-secondary'}>
+            <button key={action.key} title={action.key === 'update' && project.update_policy?.effective_policy === 'no_updates' ? 'Updates are disabled for this project; clicking records a skipped session.' : action.title} onClick={() => runAction(action.key)} className={action.key === 'down' ? 'btn-danger' : 'btn-secondary'}>
               {action.label}
             </button>
           ))}
@@ -184,7 +202,7 @@ export default function ProjectDetail() {
         </div>
 
         <div className="pt-4">
-          {activeTab === 'overview' && <Overview project={project} />}
+          {activeTab === 'overview' && <Overview project={project} policyForm={policyForm} setPolicyForm={setPolicyForm} saveUpdatePolicy={saveUpdatePolicy} />}
 
           {activeTab === 'logs' && (
             <div className="mb-4 flex flex-wrap items-end gap-3">
@@ -222,13 +240,37 @@ export default function ProjectDetail() {
   );
 }
 
-function Overview({ project }) {
+function Overview({ project, policyForm, setPolicyForm, saveUpdatePolicy }) {
+  const policy = project.update_policy || {};
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2">
         <Info label="Compose file" value={project.compose_file} />
         <Info label="Directory" value={project.dir} />
       </div>
+      <form onSubmit={saveUpdatePolicy} className="rounded-md border border-gray-200 p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="grid flex-1 gap-3 md:grid-cols-[220px_1fr]">
+            <Field label="Update policy" title="Auto marks build-only GitHub/GitLab projects with no registry image as no-updates. Manual modes override detection.">
+              <select className="input" value={policyForm.mode} onChange={e => setPolicyForm({ ...policyForm, mode: e.target.value })}>
+                <option value="auto">Auto detect</option>
+                <option value="allow">Always allow updates</option>
+                <option value="no_updates">No updates</option>
+              </select>
+            </Field>
+            <Field label="Notes" title="Optional operator note for why this policy is set.">
+              <input className="input" value={policyForm.notes} onChange={e => setPolicyForm({ ...policyForm, notes: e.target.value })} placeholder="optional note" />
+            </Field>
+          </div>
+          <button className="btn-primary">Save Policy</button>
+        </div>
+        <div className="mt-3 grid gap-2 text-sm text-gray-600 md:grid-cols-2">
+          <Info label="Effective policy" value={policy.effective_policy || 'allow'} />
+          <Info label="Detected source" value={[policy.detected_source_type, policy.detected_source_url].filter(Boolean).join(' - ') || 'none'} />
+          <Info label="Reason" value={policy.no_updates_reason || policy.detected_reason || 'updates allowed'} />
+          <Info label="Mode" value={policy.mode || 'auto'} />
+        </div>
+      </form>
       <div>
         <h2 className="mb-2 text-lg font-semibold text-gray-950">Containers</h2>
         <div className="overflow-x-auto">
