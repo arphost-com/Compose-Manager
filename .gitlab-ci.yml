@@ -159,8 +159,10 @@ security:image_scan:
       web_image="${CI_COMPOSE_PROJECT_NAME}-web"
       docker image inspect "${server_image}" >/dev/null
       docker image inspect "${web_image}" >/dev/null
-      trivy image --scanners vuln,secret,misconfig --severity HIGH,CRITICAL ${ignore_args} --format json --output trivy-server-image-report.json --exit-code 1 "${server_image}"
-      trivy image --scanners vuln,secret,misconfig --severity HIGH,CRITICAL ${ignore_args} --format json --output trivy-web-image-report.json --exit-code 1 "${web_image}"
+      rc=0
+      trivy image --scanners vuln,secret,misconfig --severity HIGH,CRITICAL ${ignore_args} --format json --output trivy-server-image-report.json --exit-code 1 "${server_image}" || rc=$?
+      trivy image --scanners vuln,secret,misconfig --severity HIGH,CRITICAL ${ignore_args} --format json --output trivy-web-image-report.json --exit-code 1 "${web_image}" || rc=$?
+      exit "${rc}"
   artifacts:
     when: always
     expire_in: 1 week

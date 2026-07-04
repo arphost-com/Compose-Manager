@@ -240,9 +240,8 @@ func runCommandJob(job *ActionJob, dir string, timeoutSecs int, name string, arg
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	// Callers pass fixed Docker commands or validated hook paths; arguments are not shell-expanded.
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(ctx, name, args...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd.Dir = dir
 	cmd.Env = append(cmd.Environ(), "COMPOSE_PROGRESS=plain")
 
