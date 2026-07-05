@@ -697,8 +697,8 @@ export default function Settings() {
                 <Field label="Fixed CIDR v6" title="IPv6 subnet Docker should use for container addresses, for example fd00:dead:beef::/48. Leave blank unless IPv6 is configured on the host.">
                   <input className="input" value={dockerForm.fixed_cidr_v6} onChange={e => setDockerForm({ ...dockerForm, fixed_cidr_v6: e.target.value })} placeholder="fd00:dead:beef::/48" />
                 </Field>
-                <Field label="Default address pools" title="One pool per line as base,size, for example 172.30.0.0/16,24. Controls Docker-created bridge network subnets and helps avoid VPN/LAN overlaps." hint="Format: base,size per line — e.g. 172.30.0.0/16,24 gives 256 /24 subnets. Both parts are required. Save fails clearly if any line is malformed.">
-                  <textarea className="textarea h-24 font-mono" value={dockerForm.default_address_pools} onChange={e => setDockerForm({ ...dockerForm, default_address_pools: e.target.value })} placeholder="172.30.0.0/16,24&#10;172.31.0.0/16,24" />
+                <Field label="Default address pools" title="One pool per line. Either a single CIDR like 172.31.0.0/24 (one subnet) or base,size like 172.30.0.0/16,24 (256 /24 subnets carved from a /16). Controls Docker-created bridge network subnets and helps avoid VPN/LAN overlaps." hint="Simple: one CIDR per line, e.g. 172.31.0.0/24. Advanced: base,size to carve subnets from a larger pool, e.g. 172.30.0.0/16,24.">
+                  <textarea className="textarea h-24 font-mono" value={dockerForm.default_address_pools} onChange={e => setDockerForm({ ...dockerForm, default_address_pools: e.target.value })} placeholder="172.31.0.0/24&#10;172.30.0.0/16,24" />
                 </Field>
               </div>
 
@@ -968,19 +968,22 @@ function linesToPools(value) {
   return lines.map((line, index) => {
     const parts = line.split(',').map(part => part.trim());
     const base = parts[0] || '';
-    const sizeText = parts[1] || '';
+    let sizeText = parts[1] || '';
     if (!base) throw new Error(`Default address pool line ${index + 1} is empty.`);
     if (!/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(base)) {
-      throw new Error(`Default address pool line ${index + 1}: base must be a CIDR like 172.30.0.0/16 (got "${base}").`);
+      throw new Error(`Default address pool line ${index + 1}: enter a CIDR like 172.30.0.0/16 (got "${base}").`);
     }
+    const baseMask = Number(base.split('/')[1]);
+    // Single-CIDR form (no comma): treat the CIDR itself as a one-subnet pool.
+    // Advanced form (base,size): base is the outer pool and size is the subnet
+    // size Docker slices out. 172.30.0.0/16,24 gives 256 /24 subnets from a /16.
     if (!sizeText) {
-      throw new Error(`Default address pool line ${index + 1}: missing size after the comma. Example: ${base},24`);
+      sizeText = String(baseMask);
     }
     const size = Number(sizeText);
     if (!Number.isInteger(size) || size < 1 || size > 32) {
       throw new Error(`Default address pool line ${index + 1}: size must be an integer 1-32 (got "${sizeText}").`);
     }
-    const baseMask = Number(base.split('/')[1]);
     if (size < baseMask) {
       throw new Error(`Default address pool line ${index + 1}: subnet size /${size} must be greater than or equal to the base mask /${baseMask}.`);
     }
