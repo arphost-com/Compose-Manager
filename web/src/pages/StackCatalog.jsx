@@ -243,11 +243,11 @@ export default function StackCatalog() {
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {filtered.map(template => (
-          <button key={template.id} type="button" onClick={() => openTemplate(template)} className="min-w-0 rounded-md border border-gray-200 bg-white p-4 text-left text-sm shadow-sm hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200" title="Open this stack in the editor and spin it up.">
+          <button key={template.id} type="button" onClick={() => openTemplate(template)} className="min-w-0 rounded-md border border-gray-200 bg-white p-4 text-left text-sm shadow-sm hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200" title={`${template.name} — click to open the editor and spin it up.`}>
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="break-words font-medium text-gray-950">{template.name}</div>
-                <div className="mt-1 text-xs text-gray-500">{template.description}</div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-medium text-gray-950" title={template.name}>{template.name}</div>
+                <div className="mt-1 text-xs text-gray-500 line-clamp-2">{template.description}</div>
               </div>
               <div className="flex shrink-0 flex-col items-end gap-1">
                 <Badge>{labelForCategory(template.category)}</Badge>
