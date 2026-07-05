@@ -97,6 +97,7 @@ export const stackTemplates = {
 export const agents = {
   list: () => request('/agents'),
   save: (body) => request('/agents', { method: 'POST', body: JSON.stringify(body) }),
+  projects: (id) => request(`/agents/${id}/projects`),
   delete: (id) => request(`/agents/${id}`, { method: 'DELETE' }),
 };
 
@@ -170,4 +171,9 @@ export const system = {
 
 export const registries = {
   login: (body) => request('/registries/login', { method: 'POST', body: JSON.stringify(body) }),
+};
+
+export const dockerSettings = {
+  daemon: () => request('/docker/daemon'),
+  saveDaemon: (body) => request('/docker/daemon', { method: 'PUT', body: JSON.stringify(body) }),
 };

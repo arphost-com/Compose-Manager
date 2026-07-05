@@ -17,6 +17,7 @@ export default function Dashboard() {
   const [scheduleList, setScheduleList] = useState([]);
   const [metricsSummary, setMetricsSummary] = useState(null);
   const [metricsHistory, setMetricsHistory] = useState([]);
+  const [mainTab, setMainTab] = useState('projects');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionResult, setActionResult] = useState(null);
@@ -311,6 +312,17 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div className="section-panel">
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => setMainTab('projects')} className={mainTab === 'projects' ? 'btn-primary' : 'btn-secondary'} title="Show project discovery, filters, and compose actions.">Projects</button>
+          <button type="button" onClick={() => setMainTab('system')} className={mainTab === 'system' ? 'btn-primary' : 'btn-secondary'} title="Show system health, enabled modules, and historical host statistics.">System Status</button>
+        </div>
+      </div>
+
+      {actionResult && <ActionResult result={actionResult} onDismiss={() => setActionResult(null)} />}
+
+      {mainTab === 'projects' && (
+        <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <StatCard label="Projects" value={projectList.length} active={quickFilter === 'all'} title="Show all discovered projects." onClick={() => setSummaryFilter('all')} />
         <StatCard label="Running" value={running} active={quickFilter === 'running'} title="Show projects with running containers." onClick={() => setSummaryFilter('running')} />
@@ -319,21 +331,6 @@ export default function Dashboard() {
         <StatCard label="Registry services" value={registryServices} active={quickFilter === 'registry'} title="Show projects with registry-backed services." onClick={() => setSummaryFilter('registry')} />
         <StatCard label="Custom builds" value={customServices} active={quickFilter === 'custom'} title="Show projects with custom build services." onClick={() => setSummaryFilter('custom')} />
       </div>
-
-      <MetricsPanel summary={metricsSummary} history={metricsHistory} onRefresh={async () => {
-        setActionResult({ label: 'metrics refresh', status: 'running' });
-        try {
-          const res = await metricsApi.refresh();
-          const hist = await metricsApi.history(24);
-          setMetricsSummary(res.data || null);
-          setMetricsHistory(hist.data || []);
-          setActionResult({ label: 'metrics refresh', status: 'done' });
-        } catch (err) {
-          setActionResult({ label: 'metrics refresh', status: 'error', error: err.message });
-        }
-      }} />
-
-      {actionResult && <ActionResult result={actionResult} onDismiss={() => setActionResult(null)} />}
 
       {showCreate && (
         <form onSubmit={createProject} className="section-panel space-y-4">
@@ -453,142 +450,61 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
-        <div className="section-panel">
-          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-950">Scheduled Updates</h2>
-              <p className="text-sm text-gray-600">Run update, pull, restart, start, stop, or status on a fixed interval.</p>
-            </div>
-            <Badge tone="blue">{scheduleList.length} schedules</Badge>
+        </>
+      )}
+
+      {mainTab === 'system' && (
+        <SystemStatus
+          skills={skillList}
+          summary={metricsSummary}
+          history={metricsHistory}
+          onRefresh={async () => {
+            setActionResult({ label: 'metrics refresh', status: 'running' });
+            try {
+              const res = await metricsApi.refresh();
+              const [skillsRes, hist] = await Promise.all([skillsApi.list(), metricsApi.history(24)]);
+              setSkillList(skillsRes.data || []);
+              setMetricsSummary(res.data || null);
+              setMetricsHistory(hist.data || []);
+              setActionResult({ label: 'metrics refresh', status: 'done' });
+            } catch (err) {
+              setActionResult({ label: 'metrics refresh', status: 'error', error: err.message });
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SystemStatus({ skills, summary, history, onRefresh }) {
+  return (
+    <div className="space-y-4">
+      <div className="section-panel">
+        <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-950">System Status</h2>
+            <p className="text-sm text-gray-600">Host modules, cache health, and historical system statistics.</p>
           </div>
-          <form onSubmit={saveSchedule} className="mb-4 grid gap-3 lg:grid-cols-6">
-            <Field label="Agent" title="Leave local for this server, or choose a registered agent.">
-              <select value={scheduleForm.agent_id} onChange={e => setScheduleForm({ ...scheduleForm, agent_id: e.target.value })} className="input">
-                <option value="">Local</option>
-                {agentList.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Project" title="Project folder name on the selected server or agent.">
-              <input required list="local-projects" value={scheduleForm.project} onChange={e => setScheduleForm({ ...scheduleForm, project: e.target.value })} className="input" placeholder="project-name" />
-              <datalist id="local-projects">
-                {projectList.map(p => <option key={p.name} value={p.name} />)}
-              </datalist>
-            </Field>
-            <Field label="Action" title="Scheduled compose action. Update respects no-update project policy.">
-              <select value={scheduleForm.action} onChange={e => setScheduleForm({ ...scheduleForm, action: e.target.value })} className="input">
-                {ACTIONS.map(action => <option key={action.key} value={action.key}>{action.label}</option>)}
-                <option value="status">Status</option>
-              </select>
-            </Field>
-            <Field label="Every minutes" title="Minimum 5 minutes. Use 1440 for daily.">
-              <input type="number" min="5" value={scheduleForm.interval_minutes} onChange={e => setScheduleForm({ ...scheduleForm, interval_minutes: Number(e.target.value) })} className="input" />
-            </Field>
-            <Field label="Timeout" title="Seconds before pull/update commands time out.">
-              <input type="number" min="0" value={scheduleForm.timeout_seconds} onChange={e => setScheduleForm({ ...scheduleForm, timeout_seconds: Number(e.target.value) })} className="input" />
-            </Field>
-            <div className="flex items-end gap-2">
-              <label className="mb-2 flex items-center gap-2 text-sm text-gray-700" title="Disable to keep the schedule saved without running it.">
-                <input type="checkbox" checked={scheduleForm.enabled} onChange={e => setScheduleForm({ ...scheduleForm, enabled: e.target.checked })} />
-                Enabled
-              </label>
-              <button type="submit" title="Save this schedule to MariaDB." className="btn-primary">{scheduleForm.id ? 'Update' : 'Add'}</button>
-            </div>
-          </form>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[840px] text-left text-sm">
-              <thead><tr className="border-b border-gray-200 text-xs uppercase text-gray-500"><th className="py-2">Target</th><th>Action</th><th>Interval</th><th>Next</th><th>Last</th><th className="text-right">Tools</th></tr></thead>
-              <tbody>
-                {scheduleList.map(schedule => (
-                  <tr key={schedule.id} className="border-b border-gray-100">
-                    <td className="py-2">
-                      <div className="font-medium">{schedule.project}</div>
-                      <div className="text-xs text-gray-500">{schedule.agent_name || 'Local'}</div>
-                    </td>
-                    <td><Badge tone={schedule.enabled ? 'green' : 'gray'}>{schedule.action}</Badge></td>
-                    <td>{schedule.interval_minutes}m</td>
-                    <td className="text-xs text-gray-500">{formatDate(schedule.next_run_at)}</td>
-                    <td className="text-xs text-gray-500">{schedule.last_status || 'never'} {schedule.last_job_id ? `· ${schedule.last_job_id}` : ''}</td>
-                    <td>
-                      <div className="flex justify-end gap-1">
-                        <button title="Run this schedule now and update its next-run time." onClick={() => runSchedule(schedule)} className="mini-button">Run</button>
-                        <button title="Load this schedule into the edit form." onClick={() => editSchedule(schedule)} className="mini-button">Edit</button>
-                        <button title="Delete this schedule." onClick={() => deleteSchedule(schedule)} className="mini-danger">Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {scheduleList.length === 0 && <div className="py-6 text-gray-500">No schedules configured.</div>}
-          </div>
+          <Badge tone="blue">{skills.length} modules</Badge>
         </div>
-
-        <form onSubmit={saveAgent} className="section-panel space-y-3">
-          <h2 className="text-lg font-semibold text-gray-950">Agents</h2>
-          <Field label="Name" title="Friendly name for the remote compose host.">
-            <input value={agentForm.name} onChange={e => setAgentForm({ ...agentForm, name: e.target.value })} className="input" placeholder="docker03" />
-          </Field>
-          <Field label="Agent URL" title="Base URL for the remote Compose Manager agent, for example https://docker03.example.com.">
-            <input value={agentForm.base_url} onChange={e => setAgentForm({ ...agentForm, base_url: e.target.value })} className="input" placeholder="https://host:8192" />
-          </Field>
-          <Field label="Token" title="Bearer token used by the controller to call this agent.">
-            <input type="password" value={agentForm.token} onChange={e => setAgentForm({ ...agentForm, token: e.target.value })} className="input" />
-          </Field>
-          <label className="flex items-center gap-2 text-sm text-gray-700" title="Disabled agents remain saved but scheduled actions will not run.">
-            <input type="checkbox" checked={agentForm.enabled} onChange={e => setAgentForm({ ...agentForm, enabled: e.target.checked })} />
-            Enabled
-          </label>
-          <button type="submit" title="Save this agent connection." className="btn-secondary w-full">Save Agent</button>
-          <div className="space-y-2 pt-2">
-            {agentList.map(agent => (
-              <div key={agent.id} className="flex items-center justify-between gap-2 rounded-md border border-gray-200 p-2 text-sm">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {skills.map(s => (
+            <div key={s.name} className="rounded-md border border-gray-200 p-3">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-medium">{agent.name}</div>
-                  <div className="max-w-[260px] truncate text-xs text-gray-500" title={agent.base_url}>{agent.base_url}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge tone={agent.enabled ? 'green' : 'gray'}>{agent.enabled ? 'on' : 'off'}</Badge>
-                  <button title="Delete this agent and its schedules." type="button" onClick={() => deleteAgent(agent)} className="mini-danger">Delete</button>
-                </div>
-              </div>
-            ))}
-            {agentList.length === 0 && <div className="py-3 text-sm text-gray-500">No agents registered.</div>}
-          </div>
-        </form>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <form onSubmit={loginRegistry} className="section-panel space-y-3">
-          <h2 className="text-lg font-semibold text-gray-950">Private Registry Login</h2>
-          <div className="grid gap-3 md:grid-cols-3">
-            <Field label="Registry" title="Docker registry host only, such as registry.gitlab.com. Leave blank for Docker Hub.">
-              <input value={registryForm.registry} onChange={e => setRegistryForm({ ...registryForm, registry: e.target.value })} className="input" placeholder="registry.gitlab.com" />
-            </Field>
-            <Field label="Username" title="Registry username or deploy token username.">
-              <input required value={registryForm.username} onChange={e => setRegistryForm({ ...registryForm, username: e.target.value })} className="input" />
-            </Field>
-            <Field label="Token or password" title="Sent to docker login via password-stdin. It is not stored by the web app after submission.">
-              <input required type="password" value={registryForm.password} onChange={e => setRegistryForm({ ...registryForm, password: e.target.value })} className="input" />
-            </Field>
-          </div>
-          <button type="submit" title="Authenticate Docker so private image pulls and updates can succeed." className="btn-secondary">Login Registry</button>
-        </form>
-        <div className="section-panel">
-          <h2 className="text-lg font-semibold text-gray-950">Skills</h2>
-          <div className="mt-3 space-y-2">
-            {skillList.map(s => (
-              <div key={s.name} className="flex items-start justify-between gap-3 border-b border-gray-100 pb-2 last:border-0">
-                <div>
-                  <div className="font-medium capitalize text-gray-900">{s.name}</div>
-                  <div className="text-xs text-gray-500">{s.description}</div>
+                  <div className="font-medium capitalize text-gray-900">{s.name === 'frontend' ? 'web dashboard' : s.name}</div>
+                  <div className="mt-1 text-xs text-gray-500">{s.description}</div>
+                  {s.version && <div className="mt-2 text-xs text-gray-400">v{s.version}</div>}
                 </div>
                 <Badge tone={s.healthy ? 'green' : 'red'}>{s.healthy ? 'healthy' : 'down'}</Badge>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
+          {skills.length === 0 && <div className="py-6 text-sm text-gray-500">No system modules reported yet.</div>}
         </div>
       </div>
+      <MetricsPanel summary={summary} history={history} onRefresh={onRefresh} />
     </div>
   );
 }

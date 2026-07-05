@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -99,11 +100,15 @@ func (h *ScheduleHandler) RunNow(w http.ResponseWriter, r *http.Request) {
 }
 
 type AgentHandler struct {
-	Store *storage.Store
+	Store      *storage.Store
+	HTTPClient *http.Client
 }
 
 func NewAgentHandler(store *storage.Store) *AgentHandler {
-	return &AgentHandler{Store: store}
+	return &AgentHandler{
+		Store:      store,
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+	}
 }
 
 func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +155,71 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"deleted": true})
+}
+
+func (h *AgentHandler) Projects(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Param(r, "agentID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	agent, err := h.Store.GetAgent(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !agent.Enabled {
+		writeError(w, http.StatusBadRequest, "agent is disabled")
+		return
+	}
+	base, err := url.Parse(agent.BaseURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		writeError(w, http.StatusBadRequest, "invalid agent URL")
+		return
+	}
+	if base.Scheme != "http" && base.Scheme != "https" {
+		writeError(w, http.StatusBadRequest, "agent URL must use http or https")
+		return
+	}
+	path := strings.TrimRight(base.String(), "/") + "/agent/v1/projects"
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, path, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+agent.Token)
+	client := h.HTTPClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer res.Body.Close()
+	var envelope struct {
+		Status string         `json:"status"`
+		Error  string         `json:"error"`
+		Data   []core.Project `json:"data"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&envelope); err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 || envelope.Status == "error" {
+		if envelope.Error == "" {
+			envelope.Error = res.Status
+		}
+		writeError(w, http.StatusBadGateway, envelope.Error)
+		return
+	}
+	_ = h.Store.TouchAgent(r.Context(), agent.ID)
+	writeJSON(w, http.StatusOK, envelope.Data)
 }
 
 func ListStackTemplates(w http.ResponseWriter, r *http.Request) {

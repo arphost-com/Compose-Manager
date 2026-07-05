@@ -98,12 +98,10 @@ func (s *Skill) Create(w http.ResponseWriter, r *http.Request) {
 	backupName := fmt.Sprintf("%s__%s.tar.gz", name, timestamp)
 	backupPath := filepath.Join(s.backupDir, backupName)
 
-	// Create tar.gz of the project directory
-	cmd := exec.Command("tar", "-czf", backupPath, "-C", filepath.Dir(project.Dir), filepath.Base(project.Dir))
-	output, err := cmd.CombinedOutput()
+	output, err := createArchive(project.Dir, backupPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError,
-			fmt.Sprintf("backup failed: %s - %s", err.Error(), string(output)))
+			fmt.Sprintf("backup failed: %s - %s", err.Error(), output))
 		return
 	}
 
@@ -272,12 +270,10 @@ func (s *Skill) Restore(w http.ResponseWriter, r *http.Request) {
 		s.engine.Down(project)
 	}
 
-	// Extract backup over the project directory
-	cmd := exec.Command("tar", "-xzf", backupPath, "-C", filepath.Dir(project.Dir))
-	output, err := cmd.CombinedOutput()
+	output, err := extractArchive(project.Dir, backupPath)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError,
-			fmt.Sprintf("restore failed: %s - %s", err.Error(), string(output)))
+			fmt.Sprintf("restore failed: %s - %s", err.Error(), output))
 		return
 	}
 
@@ -383,6 +379,42 @@ func validBackupID(backupID string) bool {
 		return false
 	}
 	return strings.HasSuffix(backupID, ".tar.gz")
+}
+
+func createArchive(projectDir, backupPath string) (string, error) {
+	args := []string{"-czf", backupPath, "-C", filepath.Dir(projectDir), filepath.Base(projectDir)}
+	output, err := exec.Command("tar", args...).CombinedOutput()
+	if err == nil {
+		return string(output), nil
+	}
+	fallbackOutput, fallbackErr := runTarInRootHelper(args...)
+	if fallbackErr == nil {
+		return string(fallbackOutput), nil
+	}
+	return string(output) + string(fallbackOutput), fmt.Errorf("%w; root helper fallback failed: %v", err, fallbackErr)
+}
+
+func extractArchive(projectDir, backupPath string) (string, error) {
+	args := []string{"-xzf", backupPath, "-C", filepath.Dir(projectDir)}
+	output, err := exec.Command("tar", args...).CombinedOutput()
+	if err == nil {
+		return string(output), nil
+	}
+	fallbackOutput, fallbackErr := runTarInRootHelper(args...)
+	if fallbackErr == nil {
+		return string(fallbackOutput), nil
+	}
+	return string(output) + string(fallbackOutput), fmt.Errorf("%w; root helper fallback failed: %v", err, fallbackErr)
+}
+
+func runTarInRootHelper(tarArgs ...string) ([]byte, error) {
+	container, err := os.Hostname()
+	if err != nil || strings.TrimSpace(container) == "" {
+		return nil, fmt.Errorf("container hostname unavailable")
+	}
+	args := []string{"run", "--rm", "--user", "0:0", "--volumes-from", strings.TrimSpace(container), "alpine:3.22", "tar"}
+	args = append(args, tarArgs...)
+	return exec.Command("docker", args...).CombinedOutput()
 }
 
 func validateDestinationRequest(req core.BackupDestinationRequest) error {

@@ -620,6 +620,578 @@ volumes:
 `,
 			EnvContent: "CHANGEDETECTION_PORT=5000\n",
 		},
+		{
+			ID:          "homepage",
+			Name:        "Homepage",
+			Description: "Clean self-hosted dashboard for services and widgets.",
+			Category:    "management",
+			Source:      "portainer-style",
+			Image:       "ghcr.io/gethomepage/homepage:latest",
+			Tags:        []string{"dashboard", "homepage", "management"},
+			ComposeContent: `services:
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    restart: unless-stopped
+    ports:
+      - "${HOMEPAGE_PORT:-3000}:3000"
+    volumes:
+      - homepage-config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+volumes:
+  homepage-config:
+`,
+			EnvContent: "HOMEPAGE_PORT=3000\n",
+			Notes:      "The Docker socket mount lets Homepage discover container status. Remove it if you only want static links.",
+		},
+		{
+			ID:          "it-tools",
+			Name:        "IT Tools",
+			Description: "Browser toolbox for encoding, crypto, network, and dev utilities.",
+			Category:    "devtools",
+			Source:      "portainer-style",
+			Image:       "corentinth/it-tools:latest",
+			Tags:        []string{"devtools", "utilities", "web"},
+			ComposeContent: `services:
+  it-tools:
+    image: corentinth/it-tools:latest
+    restart: unless-stopped
+    ports:
+      - "${IT_TOOLS_PORT:-8080}:80"
+`,
+			EnvContent: "IT_TOOLS_PORT=8080\n",
+		},
+		{
+			ID:          "mealie",
+			Name:        "Mealie",
+			Description: "Recipe manager with meal planning and shopping lists.",
+			Category:    "automation",
+			Source:      "portainer-style",
+			Image:       "ghcr.io/mealie-recipes/mealie:latest",
+			Tags:        []string{"recipes", "meal-planning", "family"},
+			ComposeContent: `services:
+  mealie:
+    image: ghcr.io/mealie-recipes/mealie:latest
+    restart: unless-stopped
+    ports:
+      - "${MEALIE_PORT:-9925}:9000"
+    environment:
+      ALLOW_SIGNUP: "${ALLOW_SIGNUP:-false}"
+      TZ: ${TZ:-UTC}
+    volumes:
+      - mealie-data:/app/data
+volumes:
+  mealie-data:
+`,
+			EnvContent: "MEALIE_PORT=9925\nALLOW_SIGNUP=false\nTZ=UTC\n",
+		},
+		{
+			ID:          "minio",
+			Name:        "MinIO",
+			Description: "S3-compatible object storage with web console.",
+			Category:    "files",
+			Source:      "portainer-style",
+			Image:       "quay.io/minio/minio:latest",
+			Tags:        []string{"storage", "s3", "object-storage"},
+			ComposeContent: `services:
+  minio:
+    image: quay.io/minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-me-minio}
+    volumes:
+      - minio-data:/data
+volumes:
+  minio-data:
+`,
+			EnvContent: "MINIO_API_PORT=9000\nMINIO_CONSOLE_PORT=9001\nMINIO_ROOT_USER=admin\nMINIO_ROOT_PASSWORD=change-me-minio\n",
+			Notes:      "Change MINIO_ROOT_PASSWORD before exposing the console.",
+		},
+		{
+			ID:          "nocodb",
+			Name:        "NocoDB",
+			Description: "Spreadsheet-style database UI and no-code app builder.",
+			Category:    "database",
+			Source:      "portainer-style",
+			Image:       "nocodb/nocodb:latest",
+			Tags:        []string{"database", "no-code", "spreadsheet"},
+			ComposeContent: `services:
+  nocodb:
+    image: nocodb/nocodb:latest
+    restart: unless-stopped
+    ports:
+      - "${NOCODB_PORT:-8080}:8080"
+    volumes:
+      - nocodb-data:/usr/app/data
+volumes:
+  nocodb-data:
+`,
+			EnvContent: "NOCODB_PORT=8080\n",
+		},
+		{
+			ID:          "ollama-open-webui",
+			Name:        "Ollama + Open WebUI",
+			Description: "Local AI model runner with a web chat interface.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "ghcr.io/open-webui/open-webui:main",
+			Tags:        []string{"ai", "llm", "chat"},
+			ComposeContent: `services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    ports:
+      - "${OPEN_WEBUI_PORT:-3000}:8080"
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      - ollama
+volumes:
+  ollama-data:
+  open-webui-data:
+`,
+			EnvContent: "OPEN_WEBUI_PORT=3000\n",
+			Notes:      "CPU-only model serving can be slow. Add GPU runtime options manually if the host supports them.",
+		},
+		{
+			ID:          "paperless-ngx",
+			Name:        "Paperless-ngx",
+			Description: "Document intake, OCR, tagging, and archive search.",
+			Category:    "docs",
+			Source:      "portainer-style",
+			Image:       "ghcr.io/paperless-ngx/paperless-ngx:latest",
+			Tags:        []string{"documents", "ocr", "archive"},
+			ComposeContent: `services:
+  broker:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PAPERLESS_DBNAME:-paperless}
+      POSTGRES_USER: ${PAPERLESS_DBUSER:-paperless}
+      POSTGRES_PASSWORD: ${PAPERLESS_DBPASS:-change-me}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+  webserver:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+      - broker
+    ports:
+      - "${PAPERLESS_PORT:-8000}:8000"
+    environment:
+      PAPERLESS_REDIS: redis://broker:6379
+      PAPERLESS_DBHOST: db
+      PAPERLESS_DBNAME: ${PAPERLESS_DBNAME:-paperless}
+      PAPERLESS_DBUSER: ${PAPERLESS_DBUSER:-paperless}
+      PAPERLESS_DBPASS: ${PAPERLESS_DBPASS:-change-me}
+      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY:-change-me-secret}
+      PAPERLESS_URL: ${PAPERLESS_URL:-http://localhost:8000}
+    volumes:
+      - paperless-data:/usr/src/paperless/data
+      - paperless-media:/usr/src/paperless/media
+      - ./consume:/usr/src/paperless/consume
+volumes:
+  redis-data:
+  postgres-data:
+  paperless-data:
+  paperless-media:
+`,
+			EnvContent: "PAPERLESS_PORT=8000\nPAPERLESS_URL=http://localhost:8000\nPAPERLESS_DBNAME=paperless\nPAPERLESS_DBUSER=paperless\nPAPERLESS_DBPASS=change-me\nPAPERLESS_SECRET_KEY=change-me-secret\n",
+			Notes:      "Create a consume directory beside compose.yml or edit the bind mount before starting.",
+		},
+		{
+			ID:          "stirling-pdf",
+			Name:        "Stirling PDF",
+			Description: "Self-hosted PDF merge, split, convert, and repair tools.",
+			Category:    "docs",
+			Source:      "portainer-style",
+			Image:       "frooodle/s-pdf:latest",
+			Tags:        []string{"pdf", "documents", "tools"},
+			ComposeContent: `services:
+  stirling-pdf:
+    image: frooodle/s-pdf:latest
+    restart: unless-stopped
+    ports:
+      - "${STIRLING_PDF_PORT:-8080}:8080"
+    volumes:
+      - stirling-training-data:/usr/share/tessdata
+      - stirling-config:/configs
+volumes:
+  stirling-training-data:
+  stirling-config:
+`,
+			EnvContent: "STIRLING_PDF_PORT=8080\n",
+		},
+		{
+			ID:          "syncthing",
+			Name:        "Syncthing",
+			Description: "Peer-to-peer file synchronization.",
+			Category:    "files",
+			Source:      "portainer-style",
+			Image:       "syncthing/syncthing:latest",
+			Tags:        []string{"sync", "files", "p2p"},
+			ComposeContent: `services:
+  syncthing:
+    image: syncthing/syncthing:latest
+    restart: unless-stopped
+    ports:
+      - "${SYNCTHING_UI_PORT:-8384}:8384"
+      - "${SYNCTHING_TCP_PORT:-22000}:22000/tcp"
+      - "${SYNCTHING_UDP_PORT:-22000}:22000/udp"
+      - "${SYNCTHING_DISCOVERY_PORT:-21027}:21027/udp"
+    volumes:
+      - syncthing-config:/var/syncthing
+      - ./sync:/data
+volumes:
+  syncthing-config:
+`,
+			EnvContent: "SYNCTHING_UI_PORT=8384\nSYNCTHING_TCP_PORT=22000\nSYNCTHING_UDP_PORT=22000\nSYNCTHING_DISCOVERY_PORT=21027\n",
+			Notes:      "Create a sync directory beside compose.yml or edit the bind mount before starting.",
+		},
+		{
+			ID:          "ollama",
+			Name:        "Ollama",
+			Description: "Local LLM model runner API.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "ollama/ollama:latest",
+			Tags:        []string{"ai", "llm", "models"},
+			ComposeContent: `services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+volumes:
+  ollama-data:
+`,
+			EnvContent: "OLLAMA_PORT=11434\n",
+			Notes:      "Pull models after startup with docker compose exec ollama ollama pull llama3.1 or another model.",
+		},
+		{
+			ID:          "anythingllm",
+			Name:        "AnythingLLM",
+			Description: "Private AI workspace with document chat and agents.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "mintplexlabs/anythingllm:latest",
+			Tags:        []string{"ai", "rag", "documents"},
+			ComposeContent: `services:
+  anythingllm:
+    image: mintplexlabs/anythingllm:latest
+    restart: unless-stopped
+    ports:
+      - "${ANYTHINGLLM_PORT:-3001}:3001"
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      STORAGE_DIR: /app/server/storage
+    volumes:
+      - anythingllm-storage:/app/server/storage
+volumes:
+  anythingllm-storage:
+`,
+			EnvContent: "ANYTHINGLLM_PORT=3001\n",
+			Notes:      "Connect it to Ollama, OpenAI-compatible APIs, or other providers from the AnythingLLM setup screen.",
+		},
+		{
+			ID:          "flowise",
+			Name:        "Flowise",
+			Description: "Visual builder for AI chains, agents, and chatflows.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "flowiseai/flowise:latest",
+			Tags:        []string{"ai", "agents", "workflow"},
+			ComposeContent: `services:
+  flowise:
+    image: flowiseai/flowise:latest
+    restart: unless-stopped
+    ports:
+      - "${FLOWISE_PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      FLOWISE_USERNAME: ${FLOWISE_USERNAME:-admin}
+      FLOWISE_PASSWORD: ${FLOWISE_PASSWORD:-change-me}
+    volumes:
+      - flowise-data:/root/.flowise
+volumes:
+  flowise-data:
+`,
+			EnvContent: "FLOWISE_PORT=3000\nFLOWISE_USERNAME=admin\nFLOWISE_PASSWORD=change-me\n",
+			Notes:      "Change FLOWISE_PASSWORD before exposing the app.",
+		},
+		{
+			ID:          "langflow",
+			Name:        "Langflow",
+			Description: "Visual LangChain-style AI app builder.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "langflowai/langflow:latest",
+			Tags:        []string{"ai", "langchain", "workflow"},
+			ComposeContent: `services:
+  langflow:
+    image: langflowai/langflow:latest
+    restart: unless-stopped
+    ports:
+      - "${LANGFLOW_PORT:-7860}:7860"
+    environment:
+      LANGFLOW_DATABASE_URL: sqlite:////app/langflow/langflow.db
+    volumes:
+      - langflow-data:/app/langflow
+volumes:
+  langflow-data:
+`,
+			EnvContent: "LANGFLOW_PORT=7860\n",
+		},
+		{
+			ID:          "localai",
+			Name:        "LocalAI",
+			Description: "OpenAI-compatible local model API.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "localai/localai:latest-aio-cpu",
+			Tags:        []string{"ai", "openai-compatible", "models"},
+			ComposeContent: `services:
+  localai:
+    image: localai/localai:latest-aio-cpu
+    restart: unless-stopped
+    ports:
+      - "${LOCALAI_PORT:-8080}:8080"
+    environment:
+      DEBUG: "${LOCALAI_DEBUG:-false}"
+      MODELS_PATH: /models
+    volumes:
+      - localai-models:/models
+volumes:
+  localai-models:
+`,
+			EnvContent: "LOCALAI_PORT=8080\nLOCALAI_DEBUG=false\n",
+			Notes:      "CPU image is portable but slower. Swap the image/tag for a GPU build when the host supports it.",
+		},
+		{
+			ID:          "open-webui",
+			Name:        "Open WebUI",
+			Description: "Web chat interface for Ollama and OpenAI-compatible APIs.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "ghcr.io/open-webui/open-webui:main",
+			Tags:        []string{"ai", "chat", "ollama"},
+			ComposeContent: `services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    ports:
+      - "${OPEN_WEBUI_PORT:-3000}:8080"
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - open-webui-data:/app/backend/data
+volumes:
+  open-webui-data:
+`,
+			EnvContent: "OPEN_WEBUI_PORT=3000\nOLLAMA_BASE_URL=http://host.docker.internal:11434\n",
+			Notes:      "Use this when Ollama already runs on the host or in another project.",
+		},
+		{
+			ID:          "qdrant",
+			Name:        "Qdrant",
+			Description: "Vector database for semantic search and RAG.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "qdrant/qdrant:latest",
+			Tags:        []string{"ai", "vector-db", "rag"},
+			ComposeContent: `services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant-storage:/qdrant/storage
+volumes:
+  qdrant-storage:
+`,
+			EnvContent: "QDRANT_HTTP_PORT=6333\nQDRANT_GRPC_PORT=6334\n",
+		},
+		{
+			ID:          "chroma",
+			Name:        "Chroma",
+			Description: "Embeddings database for local AI apps.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "chromadb/chroma:latest",
+			Tags:        []string{"ai", "vector-db", "embeddings"},
+			ComposeContent: `services:
+  chroma:
+    image: chromadb/chroma:latest
+    restart: unless-stopped
+    ports:
+      - "${CHROMA_PORT:-8000}:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+volumes:
+  chroma-data:
+`,
+			EnvContent: "CHROMA_PORT=8000\n",
+		},
+		{
+			ID:          "lobe-chat",
+			Name:        "LobeChat",
+			Description: "Polished multi-provider AI chat interface.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "lobehub/lobe-chat:latest",
+			Tags:        []string{"ai", "chat", "frontend"},
+			ComposeContent: `services:
+  lobe-chat:
+    image: lobehub/lobe-chat:latest
+    restart: unless-stopped
+    ports:
+      - "${LOBE_CHAT_PORT:-3210}:3210"
+    environment:
+      ACCESS_CODE: ${LOBE_ACCESS_CODE:-change-me}
+volumes: {}
+`,
+			EnvContent: "LOBE_CHAT_PORT=3210\nLOBE_ACCESS_CODE=change-me\n",
+			Notes:      "Set provider API keys in the app or add environment variables for your chosen provider.",
+		},
+		{
+			ID:          "whisper-asr",
+			Name:        "Whisper ASR",
+			Description: "Speech-to-text API using Whisper models.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "onerahmet/openai-whisper-asr-webservice:latest",
+			Tags:        []string{"ai", "transcription", "audio"},
+			ComposeContent: `services:
+  whisper-asr:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    restart: unless-stopped
+    ports:
+      - "${WHISPER_ASR_PORT:-9000}:9000"
+    environment:
+      ASR_MODEL: ${ASR_MODEL:-base}
+      ASR_ENGINE: ${ASR_ENGINE:-openai_whisper}
+    volumes:
+      - whisper-cache:/root/.cache/whisper
+volumes:
+  whisper-cache:
+`,
+			EnvContent: "WHISPER_ASR_PORT=9000\nASR_MODEL=base\nASR_ENGINE=openai_whisper\n",
+			Notes:      "Larger models improve quality but need more CPU/RAM and take longer to download.",
+		},
+		{
+			ID:          "comfyui",
+			Name:        "ComfyUI",
+			Description: "Node-based Stable Diffusion image generation UI.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "yanwk/comfyui-boot:latest",
+			Tags:        []string{"ai", "images", "stable-diffusion"},
+			ComposeContent: `services:
+  comfyui:
+    image: yanwk/comfyui-boot:latest
+    restart: unless-stopped
+    ports:
+      - "${COMFYUI_PORT:-8188}:8188"
+    volumes:
+      - comfyui-storage:/root
+volumes:
+  comfyui-storage:
+`,
+			EnvContent: "COMFYUI_PORT=8188\n",
+			Notes:      "Image generation is much better with GPU support. Add device/runtime settings manually for your host.",
+		},
+		{
+			ID:          "automatic1111",
+			Name:        "AUTOMATIC1111",
+			Description: "Stable Diffusion web UI starter.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "ghcr.io/ai-dock/stable-diffusion-webui:latest-cpu",
+			Tags:        []string{"ai", "images", "stable-diffusion"},
+			ComposeContent: `services:
+  stable-diffusion-webui:
+    image: ghcr.io/ai-dock/stable-diffusion-webui:latest-cpu
+    restart: unless-stopped
+    ports:
+      - "${A1111_PORT:-7860}:7860"
+    volumes:
+      - stable-diffusion-data:/workspace
+volumes:
+  stable-diffusion-data:
+`,
+			EnvContent: "A1111_PORT=7860\n",
+			Notes:      "This CPU starter is portable but slow. Replace the image/tag and add GPU runtime options for production image generation.",
+		},
+		{
+			ID:          "open-webui-pipelines",
+			Name:        "Open WebUI Pipelines",
+			Description: "Plugin and function server for Open WebUI.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "ghcr.io/open-webui/pipelines:main",
+			Tags:        []string{"ai", "plugins", "open-webui"},
+			ComposeContent: `services:
+  pipelines:
+    image: ghcr.io/open-webui/pipelines:main
+    restart: unless-stopped
+    ports:
+      - "${PIPELINES_PORT:-9099}:9099"
+    volumes:
+      - pipelines-data:/app/pipelines
+volumes:
+  pipelines-data:
+`,
+			EnvContent: "PIPELINES_PORT=9099\n",
+			Notes:      "Connect this endpoint from Open WebUI after startup.",
+		},
+		{
+			ID:          "searxng",
+			Name:        "SearXNG",
+			Description: "Private metasearch engine useful for AI research workflows.",
+			Category:    "ai",
+			Source:      "portainer-style",
+			Image:       "searxng/searxng:latest",
+			Tags:        []string{"ai", "search", "privacy"},
+			ComposeContent: `services:
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - "${SEARXNG_PORT:-8080}:8080"
+    environment:
+      BASE_URL: ${SEARXNG_BASE_URL:-http://localhost:8080/}
+    volumes:
+      - searxng-data:/etc/searxng
+volumes:
+  searxng-data:
+`,
+			EnvContent: "SEARXNG_PORT=8080\nSEARXNG_BASE_URL=http://localhost:8080/\n",
+			Notes:      "Useful as a private search backend for research and agent workflows.",
+		},
 	}
 	sort.Slice(templates, func(i, j int) bool {
 		return templates[i].Name < templates[j].Name

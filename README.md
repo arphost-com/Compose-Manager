@@ -205,6 +205,7 @@ Environment reference:
 | `METRICS_REFRESH_MINUTES` | `15` | Background interval for project cache warmup, Docker stats snapshots, and metrics history collection. Values below 15 are raised to 15. |
 | `WARM_CACHE_TTL_MINUTES` | `30` | Redis TTL for background-warmed project and image-source caches. Keep it at least twice the refresh interval for fastest dashboard loads. |
 | `DOCKER_ROOT` | none | Required host directory containing the Docker Compose projects that Compose Manager should discover and manage. This can be any path on the host and is mounted into the server container at `/docker`. |
+| `DOCKER_DAEMON_DIR` | `/etc/docker` | Host Docker daemon configuration directory used by Settings > Docker Settings when reading or writing `daemon.json`. |
 | `STATE_DIR` | `.compose-manager` | Compose Manager persistent state directory. Relative paths are stored under the Compose Manager root beside `docker-compose.yml`. |
 | `BACKUP_TARGET_ROOT` | `.compose-manager/backup-targets` | Host directory mounted into the server container at `/backup-targets` for UI-configured local, CIFS, NFS, and Linux mount backup endpoints. |
 | `DOCKER_GID` | host Docker socket group | Group ID for `/var/run/docker.sock`. The non-root server user is added to this group so it can run Docker commands. |
@@ -306,6 +307,8 @@ Endpoint types:
 
 Project backups are always created locally under `BACKUP_DIR` first. Choosing a destination in the Project Detail backup controls copies/uploads after the local archive is created. Local archives can be downloaded from the Backups tab. Remote-only FTP, SFTP, and S3 copies are not downloadable through the web UI unless they are also present on a mounted path the server can read.
 
+If a non-root server user cannot read project data directories such as PostgreSQL, MariaDB, or Redis bind mounts, backup creation falls back to a short-lived root helper container through the Docker socket. This lets backups include mixed-UID project files without changing ownership on the host.
+
 For a simple local or mounted destination, create the endpoint in Settings with:
 
 ```text
@@ -330,6 +333,23 @@ Use the Project Detail overview page to view or override the policy.
 The dashboard includes a built-in stack catalog modeled after Docker GUI template flows such as Kitematic image browsing and Portainer app templates. Choosing a template does not deploy immediately; it loads editable `compose.yml` and `.env` content into the Create Project form so the operator can review paths, ports, passwords, and volumes first.
 
 Initial built-in templates include WordPress/MariaDB, Nginx static site, PostgreSQL, Redis, Gitea, Uptime Kuma, Portainer Agent, and Prometheus/Grafana. These are normal Compose projects after creation and can be edited later on disk like any other project.
+
+The catalog also includes additional self-hosted templates such as Paperless-ngx, Stirling PDF, Homepage, MinIO, Mealie, Syncthing, NocoDB, and AI starters including Ollama, Open WebUI, AnythingLLM, Flowise, Langflow, LocalAI, Qdrant, Chroma, Whisper ASR, ComfyUI, and Stable Diffusion web UI.
+
+### Docker Settings
+
+Settings > Docker Settings reads and writes the Docker host's `daemon.json` using `DOCKER_DAEMON_DIR`, defaulting to `/etc/docker`. The tab exposes common daemon settings with tooltips:
+
+- Log driver and log rotation defaults.
+- Live restore.
+- DNS servers.
+- Default bridge network address pools.
+- Registry mirrors and insecure registries.
+- IPv6 defaults.
+- Optional Docker TCP API hosts.
+- Advanced raw JSON for daemon options not shown as form fields.
+
+Saving creates a timestamped backup beside `daemon.json` when the file already exists. Docker must still be restarted on the host for changes to apply. Remote Docker TCP access is root-equivalent; prefer SSH, TLS on port `2376`, VPN-only binding, and firewall allowlists. For Docker Hub rate limits, login with `docker login` as the service user or configure trusted registry mirrors before rebuilding images.
 
 ### Scheduled Updates And Agents
 

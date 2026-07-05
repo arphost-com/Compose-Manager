@@ -24,6 +24,7 @@ type Config struct {
 	RedisAddr       string
 	RedisPassword   string
 	RedisDB         int
+	DockerDaemonDir string
 	CacheTTL        time.Duration
 	MetricsInterval time.Duration
 	WarmCacheTTL    time.Duration
@@ -36,21 +37,22 @@ func Load() (*Config, error) {
 	port, _ := strconv.Atoi(getEnv("PORT", "8192"))
 
 	cfg := &Config{
-		Mode:          getEnv("APP_MODE", "server"),
-		Port:          port,
-		Root:          getEnv("ROOT", "/docker"),
-		APIKey:        getEnv("API_KEY", ""),
-		AgentName:     getEnv("AGENT_NAME", ""),
-		AgentToken:    getEnv("AGENT_TOKEN", ""),
-		StateDir:      getEnv("STATE_DIR", ""),
-		HooksDir:      getEnv("HOOKS_DIR", ""),
-		LogDir:        getEnv("LOG_DIR", ""),
-		AdminUsername: getEnv("ADMIN_USERNAME", "admin"),
-		AdminPassword: getEnv("ADMIN_PASSWORD", ""),
-		DatabaseDSN:   getEnv("DATABASE_DSN", ""),
-		RedisAddr:     getEnv("REDIS_ADDR", "redis:6379"),
-		RedisPassword: getEnv("REDIS_PASSWORD", ""),
-		BackupDir:     getEnv("BACKUP_DIR", ""),
+		Mode:            getEnv("APP_MODE", "server"),
+		Port:            port,
+		Root:            getEnv("ROOT", "/docker"),
+		APIKey:          getEnv("API_KEY", ""),
+		AgentName:       getEnv("AGENT_NAME", ""),
+		AgentToken:      getEnv("AGENT_TOKEN", ""),
+		StateDir:        getEnv("STATE_DIR", ""),
+		HooksDir:        getEnv("HOOKS_DIR", ""),
+		LogDir:          getEnv("LOG_DIR", ""),
+		AdminUsername:   getEnv("ADMIN_USERNAME", "admin"),
+		AdminPassword:   getEnv("ADMIN_PASSWORD", ""),
+		DatabaseDSN:     getEnv("DATABASE_DSN", ""),
+		RedisAddr:       getEnv("REDIS_ADDR", "redis:6379"),
+		RedisPassword:   getEnv("REDIS_PASSWORD", ""),
+		DockerDaemonDir: getEnv("DOCKER_DAEMON_DIR", "/etc/docker"),
+		BackupDir:       getEnv("BACKUP_DIR", ""),
 	}
 	cfg.RedisDB, _ = strconv.Atoi(getEnv("REDIS_DB", "0"))
 	cacheTTL, _ := strconv.Atoi(getEnv("CACHE_TTL_SECONDS", "15"))

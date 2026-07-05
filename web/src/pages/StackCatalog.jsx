@@ -82,18 +82,18 @@ export default function StackCatalog() {
       <div className="grid gap-4 lg:grid-cols-[1fr_520px]">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map(template => (
-            <button key={template.id} type="button" onClick={() => chooseTemplate(template)} className={`rounded-md border border-gray-200 bg-white p-4 text-left text-sm shadow-sm hover:border-blue-300 ${selected?.id === template.id ? 'border-blue-500 ring-2 ring-blue-100' : ''}`} title="Load this stack into the editor.">
+            <button key={template.id} type="button" onClick={() => chooseTemplate(template)} className={`min-w-0 rounded-md border border-gray-200 bg-white p-4 text-left text-sm shadow-sm hover:border-blue-300 ${selected?.id === template.id ? 'border-blue-500 ring-2 ring-blue-100' : ''}`} title="Load this stack into the editor.">
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="font-medium text-gray-950">{template.name}</div>
+                <div className="min-w-0">
+                  <div className="break-words font-medium text-gray-950">{template.name}</div>
                   <div className="mt-1 text-xs text-gray-500">{template.description}</div>
                 </div>
-                <Badge>{template.category}</Badge>
+                <span className="shrink-0"><Badge>{template.category}</Badge></span>
               </div>
               <div className="mt-3 flex flex-wrap gap-1">
                 {(template.tags || []).map(tag => <Badge key={tag} tone="cyan">{tag}</Badge>)}
               </div>
-              {template.image && <div className="mt-3 font-mono text-xs text-gray-500">{template.image}</div>}
+              {template.image && <div className="mt-3 min-w-0 break-all font-mono text-xs text-gray-500">{template.image}</div>}
             </button>
           ))}
           {filtered.length === 0 && <div className="py-12 text-center text-sm text-gray-500 md:col-span-2 xl:col-span-3">No templates match the current filters.</div>}

@@ -83,6 +83,7 @@ func main() {
 	agentHandler := handlers.NewAgentHandler(appStore)
 	scheduleHandler := handlers.NewScheduleHandler(appStore, scheduler)
 	metricsHandler := handlers.NewMetricsHandler(appStore, metricsCollector)
+	dockerSettingsHandler := handlers.NewDockerSettingsHandler(cfg.DockerDaemonDir)
 	skillHandler := handlers.NewSkillHandler(registry)
 	authHandler := handlers.NewAuthHandler(userStore, sessionManager)
 
@@ -150,6 +151,7 @@ func main() {
 			r.Get("/stack-templates/{templateID}", handlers.GetStackTemplate)
 			r.Get("/agents", agentHandler.List)
 			r.Post("/agents", agentHandler.Save)
+			r.Get("/agents/{agentID}/projects", agentHandler.Projects)
 			r.Delete("/agents/{agentID}", agentHandler.Delete)
 			r.Get("/schedules", scheduleHandler.List)
 			r.Post("/schedules", scheduleHandler.Save)
@@ -159,6 +161,8 @@ func main() {
 			r.Get("/metrics/history", metricsHandler.History)
 			r.Get("/metrics/backup-activity", metricsHandler.BackupActivity)
 			r.Post("/metrics/refresh", metricsHandler.Refresh)
+			r.Get("/docker/daemon", dockerSettingsHandler.GetDaemon)
+			r.Put("/docker/daemon", dockerSettingsHandler.SaveDaemon)
 
 			// Skills
 			r.Route("/skills", func(sr chi.Router) {
