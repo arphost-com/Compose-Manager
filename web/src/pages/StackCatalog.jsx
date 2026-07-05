@@ -18,19 +18,51 @@ const CATEGORY_LABELS = {
   web: 'Web',
 };
 
+const CATEGORY_DESCRIPTIONS = {
+  all: 'Every built-in stack. Use the search box or the category chips to narrow the list.',
+  ai: 'AI/ML stacks: LLM inference, image and voice generation, vector databases, RAG workflows, search, code assistants, and personal agent gateways.',
+  automation: 'Task automation, workflow engines, cron schedulers, and notification systems.',
+  cms: 'Content management systems, blog platforms, and e-commerce storefronts.',
+  database: 'SQL, NoSQL, and graph databases with persistent volumes ready to be shared with other stacks.',
+  devtools: 'Developer tools: CI/CD servers, Git forges, in-browser IDEs, code intelligence, and diagram editors.',
+  docs: 'Wikis, technical documentation, and knowledge bases.',
+  files: 'File sync, share, and object storage servers.',
+  management: 'Docker and infrastructure management dashboards.',
+  media: 'Media servers, libraries, and download automation.',
+  monitoring: 'Metrics, uptime, logging, and observability.',
+  proxy: 'Reverse proxies, load balancers, and forward proxies — most also handle TLS termination.',
+  queue: 'Message queues, brokers, and workflow orchestrators.',
+  security: 'Authentication, SSO, VPNs, and security scanners.',
+  web: 'Web servers and static hosting.',
+};
+
 const SUBCATEGORY_LABELS = {
   'llm-inference': 'LLM inference',
+  'code-assistants': 'Code assistants',
+  'personal-agents': 'Personal AI agents',
   'image-generation': 'Image generation',
   'voice-speech': 'Voice / speech',
   'vector-db': 'Vector DB',
   'workflow-rag': 'Workflow / RAG',
-  'code-assistants': 'Code assistants',
   'search': 'Search',
+};
+
+const SUBCATEGORY_DESCRIPTIONS = {
+  'all': 'Every AI template. Pick a sub-category to focus.',
+  'llm-inference': 'Run large language models locally or expose an OpenAI-compatible API for other services to hit.',
+  'code-assistants': 'In-editor and CLI AI coding assistants — pair one with an LLM inference stack for a fully local setup.',
+  'personal-agents': 'Self-hosted personal AI agents that bridge Discord, Slack, WhatsApp, Signal, Telegram, iMessage and other chat apps to an LLM. OpenClaw-style.',
+  'image-generation': 'Stable Diffusion and other text-to-image / image-to-image tools. Most benefit from an NVIDIA GPU.',
+  'voice-speech': 'Text-to-speech, automatic speech recognition, and voice cloning servers.',
+  'vector-db': 'Vector similarity databases for embeddings and RAG. Pair with an LLM inference stack.',
+  'workflow-rag': 'RAG pipelines and LLM workflow builders — orchestration for chains, tools, and document ingestion.',
+  'search': 'Full-text and hybrid search engines. Some support vector search alongside classic BM25.',
 };
 
 const SUBCATEGORY_ORDER = [
   'llm-inference',
   'code-assistants',
+  'personal-agents',
   'image-generation',
   'voice-speech',
   'vector-db',
@@ -46,6 +78,8 @@ function labelForSubcategory(sub) {
   return SUBCATEGORY_LABELS[sub] || sub;
 }
 
+const EMPTY_FORM = { name: '', compose_content: '', env_content: '', inactive: false, overwrite: false };
+
 export default function StackCatalog() {
   const [templates, setTemplates] = useState([]);
   const [query, setQuery] = useState('');
@@ -53,13 +87,8 @@ export default function StackCatalog() {
   const [subcategory, setSubcategory] = useState('all');
   const [message, setMessage] = useState(null);
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({
-    name: '',
-    compose_content: '',
-    env_content: '',
-    inactive: false,
-    overwrite: false,
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
 
   const load = async () => {
     try {
@@ -71,8 +100,13 @@ export default function StackCatalog() {
   };
 
   useEffect(() => { load(); }, []);
-
   useEffect(() => { setSubcategory('all'); }, [category]);
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (event) => { if (event.key === 'Escape') closeModal(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selected]);
 
   const categoryCounts = useMemo(() => {
     const counts = {};
@@ -112,7 +146,7 @@ export default function StackCatalog() {
     return [template.name, template.description, template.category, template.subcategory, ...(template.tags || [])].filter(Boolean).join(' ').toLowerCase().includes(q);
   });
 
-  const chooseTemplate = (template) => {
+  const openTemplate = (template) => {
     setSelected(template);
     setForm({
       name: template.id,
@@ -121,27 +155,40 @@ export default function StackCatalog() {
       inactive: false,
       overwrite: false,
     });
-    setMessage({ type: 'ok', text: `${template.name} loaded. Review compose.yml and .env before creating.` });
+    setMessage(null);
   };
 
-  const createProject = async (event) => {
+  const closeModal = () => {
+    if (submitting) return;
+    setSelected(null);
+    setForm(EMPTY_FORM);
+  };
+
+  const spinItUp = async (event) => {
     event.preventDefault();
+    setSubmitting(true);
     setMessage({ type: 'running', text: `Creating ${form.name}...` });
     try {
       await projects.create(form);
-      setMessage({ type: 'ok', text: `Created ${form.name}` });
+      setMessage({ type: 'ok', text: `Spun up ${form.name}. Head to the Dashboard to check status.` });
       setSelected(null);
+      setForm(EMPTY_FORM);
     } catch (err) {
       setMessage({ type: 'error', text: err.message });
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  const activeCategoryDescription = CATEGORY_DESCRIPTIONS[category] || '';
+  const activeSubDescription = category === 'ai' ? (SUBCATEGORY_DESCRIPTIONS[subcategory] || '') : '';
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-950">Stack Catalog</h1>
-          <p className="text-sm text-gray-600">Pick a stack, edit its compose.yml and .env, then create it under the configured Docker root.</p>
+          <p className="text-sm text-gray-600">Click a stack to open the editor, review the compose.yml + .env, then Spin it Up.</p>
         </div>
         <button onClick={load} className="btn-secondary" title="Reload the built-in stack catalog.">Refresh</button>
       </div>
@@ -186,58 +233,84 @@ export default function StackCatalog() {
             })}
           </div>
         )}
+        {(activeCategoryDescription || activeSubDescription) && (
+          <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+            <div>{activeCategoryDescription}</div>
+            {activeSubDescription && <div className="mt-1 text-blue-800">{activeSubDescription}</div>}
+          </div>
+        )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_520px]">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map(template => (
-            <button key={template.id} type="button" onClick={() => chooseTemplate(template)} className={`min-w-0 rounded-md border border-gray-200 bg-white p-4 text-left text-sm shadow-sm hover:border-blue-300 ${selected?.id === template.id ? 'border-blue-500 ring-2 ring-blue-100' : ''}`} title="Load this stack into the editor.">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="break-words font-medium text-gray-950">{template.name}</div>
-                  <div className="mt-1 text-xs text-gray-500">{template.description}</div>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <Badge>{labelForCategory(template.category)}</Badge>
-                  {template.subcategory && <Badge tone="purple">{labelForSubcategory(template.subcategory)}</Badge>}
-                </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {filtered.map(template => (
+          <button key={template.id} type="button" onClick={() => openTemplate(template)} className="min-w-0 rounded-md border border-gray-200 bg-white p-4 text-left text-sm shadow-sm hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200" title="Open this stack in the editor and spin it up.">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="break-words font-medium text-gray-950">{template.name}</div>
+                <div className="mt-1 text-xs text-gray-500">{template.description}</div>
               </div>
-              <div className="mt-3 flex flex-wrap gap-1">
-                {(template.tags || []).map(tag => <Badge key={tag} tone="cyan">{tag}</Badge>)}
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <Badge>{labelForCategory(template.category)}</Badge>
+                {template.subcategory && <Badge tone="purple">{labelForSubcategory(template.subcategory)}</Badge>}
               </div>
-              {template.image && <div className="mt-3 min-w-0 break-all font-mono text-xs text-gray-500">{template.image}</div>}
-            </button>
-          ))}
-          {filtered.length === 0 && <div className="py-12 text-center text-sm text-gray-500 md:col-span-2 xl:col-span-3">No templates match the current filters.</div>}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1">
+              {(template.tags || []).map(tag => <Badge key={tag} tone="cyan">{tag}</Badge>)}
+            </div>
+            {template.image && <div className="mt-3 min-w-0 break-all font-mono text-xs text-gray-500">{template.image}</div>}
+          </button>
+        ))}
+        {filtered.length === 0 && <div className="py-12 text-center text-sm text-gray-500 md:col-span-2 xl:col-span-3 2xl:col-span-4">No templates match the current filters.</div>}
+      </div>
+
+      {selected && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-gray-950/60 p-4" onClick={closeModal} role="dialog" aria-modal="true">
+          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-gray-950">{selected.name}</h2>
+                  <Badge>{labelForCategory(selected.category)}</Badge>
+                  {selected.subcategory && <Badge tone="purple">{labelForSubcategory(selected.subcategory)}</Badge>}
+                </div>
+                <p className="mt-1 text-sm text-gray-600">{selected.notes || selected.description}</p>
+              </div>
+              <button type="button" onClick={closeModal} className="btn-secondary" title="Close without creating (Esc).">Close</button>
+            </div>
+
+            <form onSubmit={spinItUp} className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+              <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+                <label className="block text-sm" title="Folder name to create under the Docker root.">
+                  <span className="mb-1 block font-medium text-gray-700">Project name</span>
+                  <input required disabled={submitting} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="input" placeholder="example-stack" />
+                </label>
+                <label className="flex items-end gap-2 pb-2 text-sm text-gray-700" title="Create the folder but skip starting the stack until it's marked active.">
+                  <input type="checkbox" disabled={submitting} checked={form.inactive} onChange={e => setForm({ ...form, inactive: e.target.checked })} />
+                  Start inactive
+                </label>
+                <label className="flex items-end gap-2 pb-2 text-sm text-gray-700" title="Allow replacing compose.yml and .env if the folder already exists.">
+                  <input type="checkbox" disabled={submitting} checked={form.overwrite} onChange={e => setForm({ ...form, overwrite: e.target.checked })} />
+                  Overwrite existing
+                </label>
+              </div>
+              <label className="block text-sm" title="Editable compose.yml before creation.">
+                <span className="mb-1 block font-medium text-gray-700">compose.yml</span>
+                <textarea disabled={submitting} required className="textarea h-72 font-mono" value={form.compose_content} onChange={e => setForm({ ...form, compose_content: e.target.value })} />
+              </label>
+              <label className="block text-sm" title="Editable .env with default settings for this stack.">
+                <span className="mb-1 block font-medium text-gray-700">.env</span>
+                <textarea disabled={submitting} className="textarea h-40 font-mono" value={form.env_content} onChange={e => setForm({ ...form, env_content: e.target.value })} />
+              </label>
+              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 pt-3">
+                <button type="button" onClick={closeModal} disabled={submitting} className="btn-secondary" title="Cancel without creating (Esc).">Cancel</button>
+                <button type="submit" disabled={submitting} className="btn-primary" title="Create the project folder, write compose.yml + .env, and (unless Start inactive is checked) start it.">
+                  {submitting ? 'Spinning it up...' : 'Spin it Up'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-
-        <form onSubmit={createProject} className="section-panel space-y-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-950">{selected ? selected.name : 'Template Editor'}</h2>
-            <p className="text-sm text-gray-600">{selected ? selected.notes || selected.description : 'Select a template to load editable files.'}</p>
-          </div>
-          <input className="input" required disabled={!selected} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="project name" title="Folder name to create under the Docker root." />
-          <div className="flex flex-wrap gap-4 text-sm text-gray-700">
-            <label className="flex items-center gap-2" title="Create with .inactive marker.">
-              <input type="checkbox" disabled={!selected} checked={form.inactive} onChange={e => setForm({ ...form, inactive: e.target.checked })} />
-              Start inactive
-            </label>
-            <label className="flex items-center gap-2" title="Allow replacing compose.yml and .env if the project exists.">
-              <input type="checkbox" disabled={!selected} checked={form.overwrite} onChange={e => setForm({ ...form, overwrite: e.target.checked })} />
-              Overwrite existing
-            </label>
-          </div>
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium text-gray-700">compose.yml</span>
-            <textarea disabled={!selected} required className="textarea h-72 font-mono" value={form.compose_content} onChange={e => setForm({ ...form, compose_content: e.target.value })} title="Editable compose.yml before creation." />
-          </label>
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium text-gray-700">.env</span>
-            <textarea disabled={!selected} className="textarea h-40 font-mono" value={form.env_content} onChange={e => setForm({ ...form, env_content: e.target.value })} title="Editable .env with default settings for this stack." />
-          </label>
-          <button disabled={!selected} className="btn-primary w-full" title="Create the selected stack as a Compose Manager project.">Create Project</button>
-        </form>
-      </div>
+      )}
     </div>
   );
 }
