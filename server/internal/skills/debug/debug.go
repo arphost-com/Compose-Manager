@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -285,6 +287,16 @@ func (s *Skill) Shell(w http.ResponseWriter, r *http.Request) {
 		} else {
 			exitCode = upExit
 		}
+	case "git-status":
+		output, exitCode = runGitCommand(project, timeout, "status", "--short", "--branch")
+	case "git-fetch":
+		output, exitCode = runGitCommand(project, timeout, "fetch", "--all", "--prune")
+	case "git-pull":
+		output, exitCode = runGitCommand(project, timeout, "pull", "--ff-only")
+	case "git-log":
+		output, exitCode = runGitCommand(project, timeout, "log", "--oneline", "--decorate", "-n", "20")
+	case "git-remote":
+		output, exitCode = runGitCommand(project, timeout, "remote", "-v")
 	default:
 		writeError(w, http.StatusBadRequest, "unsupported troubleshooting command")
 		return
@@ -296,6 +308,33 @@ func (s *Skill) Shell(w http.ResponseWriter, r *http.Request) {
 		"exit_code": exitCode,
 		"success":   exitCode == 0,
 	})
+}
+
+func runGitCommand(project *core.Project, timeout time.Duration, args ...string) (string, int) {
+	info, err := os.Stat(filepath.Join(project.Dir, ".git"))
+	if err != nil || !info.IsDir() {
+		return "This project directory is not a git repository (no .git folder). Add a git remote, or use the Docker Compose commands above instead.\n", 128
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = project.Dir
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/bin/true")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	output := stdout.String() + stderr.String()
+	if ctx.Err() == context.DeadlineExceeded {
+		return output + "\ngit command timed out\n", 124
+	}
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return output, exitErr.ExitCode()
+		}
+		return output + err.Error() + "\n", 1
+	}
+	return output, 0
 }
 
 func runComposeShellCommand(project *core.Project, timeout time.Duration, args ...string) (string, int) {

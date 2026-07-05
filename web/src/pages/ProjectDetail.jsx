@@ -417,6 +417,11 @@ function ShellPanel({ form, setForm, result, runShell }) {
     { value: 'restart', label: 'Restart', title: 'Run docker compose restart.' },
     { value: 'logs', label: 'Logs', title: 'Run docker compose logs with timestamps.' },
     { value: 'down', label: 'Stop', title: 'Run docker compose down.' },
+    { value: 'git-status', label: 'git status', title: 'git status --short --branch (requires a .git repo in the project dir).' },
+    { value: 'git-fetch', label: 'git fetch', title: 'git fetch --all --prune (requires a .git repo).' },
+    { value: 'git-pull', label: 'git pull', title: 'git pull --ff-only in the project directory (requires a .git repo).' },
+    { value: 'git-log', label: 'git log (last 20)', title: 'git log --oneline --decorate -n 20.' },
+    { value: 'git-remote', label: 'git remote -v', title: 'Show configured git remotes and URLs.' },
   ];
   return (
     <div className="space-y-4">
