@@ -156,10 +156,11 @@ REDIS_DB=0
 CACHE_TTL_SECONDS=15
 
 DOCKER_ROOT=/home/debian/docker
-STATE_DIR=/home/debian/.compose-manager
+STATE_DIR=.compose-manager
 DOCKER_GID=998
-SERVER_USER=1001:1001
+SERVER_USER=1000:1000
 WEB_PORT=8193
+HOST_URL=http://docker01:8193
 ```
 
 Environment reference:
@@ -176,21 +177,37 @@ Environment reference:
 | `REDIS_PASSWORD` | none | Required password for Redis sessions and cache. |
 | `REDIS_DB` | `0` | Redis logical database number. `0` means the first/default Redis DB. Keep `0` for the bundled dedicated Redis container; use another index only if intentionally sharing a Redis server with other apps. |
 | `CACHE_TTL_SECONDS` | `15` | Time, in seconds, that project/image/job/settings reads may stay in Redis before refresh. Lower values show changes faster; higher values reduce Docker/API load. |
-| `DOCKER_ROOT` | `/home/debian/docker` | Host directory containing the Docker Compose projects that Compose Manager should discover and manage. Mounted into the server container at `/docker`. |
-| `STATE_DIR` | `/home/debian/.compose-manager` | Host directory for Compose Manager persistent state. This should live under the service user's home directory, not under the managed Docker root. |
+| `DOCKER_ROOT` | none | Required host directory containing the Docker Compose projects that Compose Manager should discover and manage. This can be any path on the host and is mounted into the server container at `/docker`. |
+| `STATE_DIR` | `.compose-manager` | Compose Manager persistent state directory. Relative paths are stored under the Compose Manager root beside `docker-compose.yml`. |
 | `DOCKER_GID` | host Docker socket group | Group ID for `/var/run/docker.sock`. The non-root server user is added to this group so it can run Docker commands. |
-| `SERVER_USER` | `1001:1001` | UID:GID used to run the server container. Set `0:0` only on hosts that intentionally require root compose management. |
+| `SERVER_USER` | none | Required numeric UID:GID used to run the server container and own `STATE_DIR`, for example `1000:1000`. Use whichever host user/group should manage Docker. Set `0:0` only on hosts that intentionally require root compose management. |
 | `WEB_PORT` | `8193` | Host port for the web dashboard. The API server stays internal on port `8192`. |
+| `HOST_URL` | detected from hostname and `WEB_PORT` | Dashboard URL printed by setup for the operator. Edit it if users should open a different DNS name or reverse-proxy URL. |
 
 `REDIS_DB` is not a MariaDB setting and does not create another Redis container. Redis has numbered logical databases inside one Redis instance; `0` is the normal default. Compose Manager stores login sessions and short-lived cache keys there. With the included dedicated Redis service, leave it at `0`.
+
+`SERVER_USER` is host-specific. Different Linux boxes may need different numeric IDs, such as `0:0`, `1000:1000`, or `998:998`. Compose Manager uses that same UID:GID for the server process and for prepared state directory ownership so behavior stays consistent across hosts.
 
 Start it:
 
 ```bash
+./scripts/prepare-state.sh .env
 docker compose --env-file .env up -d --build
 ```
 
+If `.env` does not exist, `prepare-state.sh` creates it from `.env.example`. It fills missing or `change-me...` values with random values for `API_KEY`, `ADMIN_PASSWORD`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`, and `REDIS_PASSWORD`; sets practical defaults for the other settings; writes everything back to `.env`; and prints the resulting settings, including `HOST_URL`. Edit host-specific values such as `DOCKER_ROOT`, `SERVER_USER`, `DOCKER_GID`, `WEB_PORT`, and `HOST_URL` as needed for that box.
+
 Open `http://<host>:8193`. If the MariaDB users table is empty, the first admin is created from `ADMIN_USERNAME` and `ADMIN_PASSWORD`. If `ADMIN_PASSWORD` is unset, the bootstrap password is `API_KEY`; rotate or add users from Settings after first login.
+
+The preparation step is required on manual installs such as docker01. The Compose file uses `create_host_path: false` for bind mounts so Docker will not silently create `STATE_DIR` as `root`. If `STATE_DIR` was already created as root, stop the stack and repair ownership once:
+
+```bash
+docker compose --env-file .env down
+. ./.env
+sudo chown -R "$(id -u):$(id -g)" "${STATE_DIR}" "${DOCKER_ROOT}"
+./scripts/prepare-state.sh .env
+docker compose --env-file .env up -d --build
+```
 
 Persistent state is stored under `STATE_DIR`:
 
@@ -202,7 +219,7 @@ Persistent state is stored under `STATE_DIR`:
 | `backups/` | Project backups and database dumps |
 | `docker-config/` | Docker registry credentials from dashboard registry login |
 
-On docker02 the app checkout is `/home/debian/docker/compose-manager`, but persistent state is `/home/debian/.compose-manager`. Do not store Compose Manager state under the managed Docker root.
+Persistent state stays under the Compose Manager root. Managed Compose projects stay under `DOCKER_ROOT`, which can be any host directory chosen for that machine.
 
 Legacy files from earlier versions are imported on startup if present:
 

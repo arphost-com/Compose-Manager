@@ -27,6 +27,7 @@ logs/
 !.env.example
 !.env.sample
 .local/
+.compose-manager/
 *.bak
 *.orig
 *.rej

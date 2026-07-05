@@ -1,4 +1,4 @@
-.PHONY: build dev test clean
+.PHONY: build dev test clean prepare-state
 
 # Build everything
 build:
@@ -23,11 +23,14 @@ build-linux:
 	cd server && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../bin/compose-manager-server-linux-amd64 ./cmd/server
 
 # Docker
+prepare-state:
+	./scripts/prepare-state.sh .env
+
 docker-build:
 	docker compose build
 
-docker-up:
-	docker compose up -d
+docker-up: prepare-state
+	docker compose --env-file .env up -d
 
 docker-down:
 	docker compose down

@@ -21,13 +21,21 @@ services:
       BACKUP_DIR: "/state/backups"
       DOCKER_CONFIG: "/state/docker-config"
       FRONTEND_EXTERNAL: "true"
-    user: "${SERVER_USER:-1001:1001}"
+    user: "${SERVER_USER:?SERVER_USER required, set to the host service UID:GID such as 1000:1000}"
     group_add:
       - "${DOCKER_GID:-0}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${DOCKER_ROOT:-/home/debian/docker}:/docker
-      - ${STATE_DIR:-/home/debian/.compose-manager}:/state
+      - type: bind
+        source: ${DOCKER_ROOT:?DOCKER_ROOT required, set to the directory containing managed Compose projects}
+        target: /docker
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${STATE_DIR:-.compose-manager}
+        target: /state
+        bind:
+          create_host_path: false
     depends_on:
       mariadb:
         condition: service_healthy
@@ -51,7 +59,11 @@ services:
       MARIADB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD required}"
       MARIADB_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD required}"
     volumes:
-      - ${STATE_DIR:-/home/debian/.compose-manager}/mariadb:/var/lib/mysql
+      - type: bind
+        source: ${STATE_DIR:-.compose-manager}/mariadb
+        target: /var/lib/mysql
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD-SHELL", "healthcheck.sh --connect --innodb_initialized"]
       interval: 10s
@@ -63,7 +75,11 @@ services:
     image: redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD required}"]
     volumes:
-      - ${STATE_DIR:-/home/debian/.compose-manager}/redis:/data
+      - type: bind
+        source: ${STATE_DIR:-.compose-manager}/redis
+        target: /data
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
       interval: 10s

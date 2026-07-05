@@ -11,7 +11,7 @@ variables:
   DEPLOY_USER: "debian"
   DEPLOY_PATH: "/home/debian/docker/compose-manager"
   DOCKER_ROOT: "/home/debian/docker"
-  STATE_DIR: "/home/debian/.compose-manager"
+  STATE_DIR: "/home/debian/docker/compose-manager/.compose-manager"
   WEB_PORT: "8193"
   COMPOSE_PROJECT_NAME: "compose-manager"
   CI_COMPOSE_PROJECT_NAME: "compose-manager-ci-${CI_PIPELINE_ID}"
@@ -201,7 +201,7 @@ deploy:docker02:
     - sudo -n chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${DEPLOY_PATH}" "${STATE_DIR}"
     - sudo -n find "${STATE_DIR}" -type d -exec chmod 2770 {} +
     - sudo -n find "${STATE_DIR}" -type f -exec chmod 660 {} +
-    - sudo -n rsync -a --delete --chown="${DEPLOY_USER}:${DEPLOY_USER}" --exclude='.git/' --exclude='.claude/' --exclude='.env' --exclude='bin/' --exclude='node_modules/' --exclude='web/dist/' --exclude='tmp/' ./ "${DEPLOY_PATH}/"
+    - sudo -n rsync -a --delete --chown="${DEPLOY_USER}:${DEPLOY_USER}" --exclude='.git/' --exclude='.claude/' --exclude='.env' --exclude='.compose-manager/' --exclude='bin/' --exclude='node_modules/' --exclude='web/dist/' --exclude='tmp/' ./ "${DEPLOY_PATH}/"
     - |
       sudo -n -u "${DEPLOY_USER}" env \
         DEPLOY_PATH="${DEPLOY_PATH}" \
@@ -233,10 +233,12 @@ deploy:docker02:
       db_password="${COMPOSE_MANAGER_DB_PASSWORD:-$(get_env DB_PASSWORD || true)}"
       db_root_password="${COMPOSE_MANAGER_DB_ROOT_PASSWORD:-$(get_env DB_ROOT_PASSWORD || true)}"
       redis_password="${COMPOSE_MANAGER_REDIS_PASSWORD:-$(get_env REDIS_PASSWORD || true)}"
+      host_url="$(get_env HOST_URL || true)"
       [ -n "${api_key}" ] || api_key="$(gen_secret)"
       [ -n "${db_password}" ] || db_password="$(gen_secret)"
       [ -n "${db_root_password}" ] || db_root_password="$(gen_secret)"
       [ -n "${redis_password}" ] || redis_password="$(gen_secret)"
+      [ -n "${host_url}" ] || host_url="http://docker02:${WEB_PORT}"
       umask 077
       tmp="$(mktemp)"
       printf '%s\n' \
@@ -249,6 +251,7 @@ deploy:docker02:
         "WEB_PORT=${WEB_PORT}" \
         "DOCKER_GID=${DOCKER_GID}" \
         "SERVER_USER=${SERVER_USER}" \
+        "HOST_URL=${host_url}" \
         > "${tmp}"
       install -m 600 "${tmp}" "${env_file}"
       rm -f "${tmp}"
