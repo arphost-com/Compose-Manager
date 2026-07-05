@@ -108,24 +108,45 @@ docker compose version
 
 ## Installation
 
-### Quick Install
+### Quick Install: Web Dashboard
 
 ```bash
-# Download and install to /usr/local/bin
+# Clone the dashboard/API project
+mkdir -p ~/docker
+cd ~/docker
+git clone https://github.com/arphost-com/Compose-Manager.git
+cd Compose-Manager
+
+# Generate .env, passwords, state directories, and printed login settings
+./scripts/prepare-state.sh .env
+
+# Start the web dashboard
+docker compose --env-file .env up -d --build
+```
+
+Open the `HOST_URL` printed by `prepare-state.sh`, usually:
+
+```bash
+http://<server>:8193
+```
+
+For an existing install:
+
+```bash
+cd ~/docker/Compose-Manager
+git pull
+./scripts/prepare-state.sh .env
+docker compose --env-file .env up -d --build
+```
+
+### CLI-Only Install
+
+Use this only if you want the standalone Bash script without the web dashboard, MariaDB, Redis, agents, stack catalog, users, schedules, backups UI, or metrics history.
+
+```bash
 chmod +x compose-manager.sh
 sudo install -m 0755 compose-manager.sh /usr/local/bin/compose-manager.sh
-```
-
-### Verify Installation
-
-```bash
 compose-manager.sh --help
-```
-
-### Optional: Create Hooks Directory
-
-```bash
-mkdir -p /docker/.compose-manager/hooks
 ```
 
 ---
