@@ -235,11 +235,15 @@ deploy:docker02:
       db_root_password="${COMPOSE_MANAGER_DB_ROOT_PASSWORD:-$(get_env DB_ROOT_PASSWORD || true)}"
       redis_password="${COMPOSE_MANAGER_REDIS_PASSWORD:-$(get_env REDIS_PASSWORD || true)}"
       host_url="$(get_env HOST_URL || true)"
+      base_image_prefix="$(get_env BASE_IMAGE_PREFIX || true)"
       [ -n "${api_key}" ] || api_key="$(gen_secret)"
       [ -n "${db_password}" ] || db_password="$(gen_secret)"
       [ -n "${db_root_password}" ] || db_root_password="$(gen_secret)"
       [ -n "${redis_password}" ] || redis_password="$(gen_secret)"
       [ -n "${host_url}" ] || host_url="http://docker02:${WEB_PORT}"
+      # docker02 is on the ARPHost GitLab network; default base images through the
+      # dependency proxy to avoid Docker Hub anonymous rate limits during rebuilds.
+      [ -n "${base_image_prefix}" ] || base_image_prefix="10.10.10.96:8929/arphost/dependency_proxy/containers/library/"
       umask 077
       tmp="$(mktemp)"
       printf '%s\n' \
@@ -253,6 +257,7 @@ deploy:docker02:
         "DOCKER_GID=${DOCKER_GID}" \
         "SERVER_USER=${SERVER_USER}" \
         "HOST_URL=${host_url}" \
+        "BASE_IMAGE_PREFIX=${base_image_prefix}" \
         > "${tmp}"
       install -m 600 "${tmp}" "${env_file}"
       rm -f "${tmp}"

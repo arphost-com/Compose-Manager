@@ -1,11 +1,13 @@
-FROM node:20-alpine AS builder
+ARG BASE_IMAGE_PREFIX=
+FROM ${BASE_IMAGE_PREFIX}node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM alpine:3.22
+ARG BASE_IMAGE_PREFIX=
+FROM ${BASE_IMAGE_PREFIX}alpine:3.22
 RUN apk add --no-cache nginx && \
     apk upgrade --no-cache && \
     mkdir -p /run/nginx /var/lib/nginx/tmp/client_body /usr/share/nginx/html && \

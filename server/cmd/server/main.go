@@ -83,7 +83,7 @@ func main() {
 	agentHandler := handlers.NewAgentHandler(appStore)
 	scheduleHandler := handlers.NewScheduleHandler(appStore, scheduler)
 	metricsHandler := handlers.NewMetricsHandler(appStore, metricsCollector)
-	dockerSettingsHandler := handlers.NewDockerSettingsHandler(cfg.DockerDaemonDir)
+	dockerSettingsHandler := handlers.NewDockerSettingsHandler(cfg.DockerDaemonDir, cfg.BaseImagePrefix)
 	skillHandler := handlers.NewSkillHandler(registry)
 	authHandler := handlers.NewAuthHandler(userStore, sessionManager)
 

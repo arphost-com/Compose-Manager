@@ -12,7 +12,8 @@ import (
 )
 
 type DockerSettingsHandler struct {
-	DaemonDir string
+	DaemonDir       string
+	BaseImagePrefix string
 }
 
 type dockerDaemonSaveRequest struct {
@@ -30,11 +31,15 @@ type dockerDaemonResponse struct {
 	Warnings        []string               `json:"warnings,omitempty"`
 }
 
-func NewDockerSettingsHandler(daemonDir string) *DockerSettingsHandler {
+func NewDockerSettingsHandler(daemonDir, baseImagePrefix string) *DockerSettingsHandler {
 	if strings.TrimSpace(daemonDir) == "" {
 		daemonDir = "/etc/docker"
 	}
-	return &DockerSettingsHandler{DaemonDir: daemonDir}
+	return &DockerSettingsHandler{DaemonDir: daemonDir, BaseImagePrefix: baseImagePrefix}
+}
+
+func (h *DockerSettingsHandler) helperImage() string {
+	return h.BaseImagePrefix + "alpine:3.22"
 }
 
 func (h *DockerSettingsHandler) GetDaemon(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +99,7 @@ func (h *DockerSettingsHandler) SaveDaemon(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *DockerSettingsHandler) readDaemonJSON() (string, bool, error) {
-	output, err := h.runDocker("run", "--rm", "-v", h.hostDaemonDir()+":/host/etc/docker:ro", "alpine:3.22", "cat", "/host/etc/docker/daemon.json")
+	output, err := h.runDocker("run", "--rm", "-v", h.hostDaemonDir()+":/host/etc/docker:ro", h.helperImage(), "cat", "/host/etc/docker/daemon.json")
 	if err != nil {
 		text := strings.TrimSpace(string(output))
 		if strings.Contains(text, "No such file") || strings.Contains(text, "can't open") {
@@ -106,7 +111,7 @@ func (h *DockerSettingsHandler) readDaemonJSON() (string, bool, error) {
 }
 
 func (h *DockerSettingsHandler) writeDaemonJSON(raw string) error {
-	args := []string{"run", "--rm", "-i", "-v", h.hostDaemonDir() + ":/host/etc/docker", "alpine:3.22", "tee", "/host/etc/docker/daemon.json"}
+	args := []string{"run", "--rm", "-i", "-v", h.hostDaemonDir() + ":/host/etc/docker", h.helperImage(), "tee", "/host/etc/docker/daemon.json"}
 	cmd := exec.Command("docker", args...)
 	cmd.Stdin = strings.NewReader(raw)
 	output, err := cmd.CombinedOutput()
@@ -118,7 +123,7 @@ func (h *DockerSettingsHandler) writeDaemonJSON(raw string) error {
 
 func (h *DockerSettingsHandler) backupDaemonJSON() (string, error) {
 	backupName := "daemon.json.compose-manager-" + time.Now().UTC().Format("20060102_150405") + ".bak"
-	output, err := h.runDocker("run", "--rm", "-v", h.hostDaemonDir()+":/host/etc/docker", "alpine:3.22", "cp", "/host/etc/docker/daemon.json", "/host/etc/docker/"+backupName)
+	output, err := h.runDocker("run", "--rm", "-v", h.hostDaemonDir()+":/host/etc/docker", h.helperImage(), "cp", "/host/etc/docker/daemon.json", "/host/etc/docker/"+backupName)
 	if err != nil {
 		return "", fmt.Errorf("backup daemon.json failed: %v - %s", err, strings.TrimSpace(string(output)))
 	}

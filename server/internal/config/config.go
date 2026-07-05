@@ -25,6 +25,7 @@ type Config struct {
 	RedisPassword   string
 	RedisDB         int
 	DockerDaemonDir string
+	BaseImagePrefix string
 	CacheTTL        time.Duration
 	MetricsInterval time.Duration
 	WarmCacheTTL    time.Duration
@@ -52,6 +53,7 @@ func Load() (*Config, error) {
 		RedisAddr:       getEnv("REDIS_ADDR", "redis:6379"),
 		RedisPassword:   getEnv("REDIS_PASSWORD", ""),
 		DockerDaemonDir: getEnv("DOCKER_DAEMON_DIR", "/etc/docker"),
+		BaseImagePrefix: getEnv("BASE_IMAGE_PREFIX", ""),
 		BackupDir:       getEnv("BACKUP_DIR", ""),
 	}
 	cfg.RedisDB, _ = strconv.Atoi(getEnv("REDIS_DB", "0"))

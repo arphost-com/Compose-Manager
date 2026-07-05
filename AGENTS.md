@@ -225,6 +225,7 @@ Server env vars:
 
 | Variable | Default | Required | Purpose |
 | --- | --- | --- | --- |
+| `BASE_IMAGE_PREFIX` | empty | no | Prefix prepended to every Docker Hub base image (`FROM` lines, compose `image:` refs, runtime `alpine:3.22` helpers). Empty = pull straight from Docker Hub. On docker02 the pipeline sets `10.10.10.96:8929/arphost/dependency_proxy/containers/library/` to route through the GitLab dependency proxy. Must end with a trailing slash. |
 | `API_KEY` | none | yes | Legacy/API key and first-admin password fallback when `ADMIN_PASSWORD` is unset. |
 | `ADMIN_USERNAME` | `admin` | no | First admin username when the MariaDB users table is empty. |
 | `ADMIN_PASSWORD` | API key bootstrap fallback | no | Optional first admin password. Rotate or replace it after first login. |

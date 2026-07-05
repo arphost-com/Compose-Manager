@@ -1,6 +1,6 @@
 services:
   state-init:
-    image: alpine:3.22
+    image: ${BASE_IMAGE_PREFIX:-}alpine:3.22
     user: "0:0"
     environment:
       SERVER_USER: "${SERVER_USER:?SERVER_USER required, set to the host service UID:GID such as 1000:1000}"
@@ -26,7 +26,10 @@ services:
     restart: "no"
 
   server:
-    build: ./server
+    build:
+      context: ./server
+      args:
+        BASE_IMAGE_PREFIX: ${BASE_IMAGE_PREFIX:-}
     environment:
       PORT: "8192"
       ROOT: "/docker"
@@ -47,6 +50,7 @@ services:
       BACKUP_DIR: "/state/backups"
       DOCKER_CONFIG: "/state/docker-config"
       DOCKER_DAEMON_DIR: "${DOCKER_DAEMON_DIR:-/etc/docker}"
+      BASE_IMAGE_PREFIX: "${BASE_IMAGE_PREFIX:-}"
       FRONTEND_EXTERNAL: "true"
     user: "${SERVER_USER:?SERVER_USER required, set to the host service UID:GID such as 1000:1000}"
     group_add:
@@ -78,7 +82,10 @@ services:
     restart: unless-stopped
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      args:
+        BASE_IMAGE_PREFIX: ${BASE_IMAGE_PREFIX:-}
     ports:
       - "${WEB_PORT:-8193}:8080"
     depends_on:
@@ -86,7 +93,7 @@ services:
     restart: unless-stopped
 
   mariadb:
-    image: mariadb:11.4
+    image: ${BASE_IMAGE_PREFIX:-}mariadb:11.4
     environment:
       MARIADB_DATABASE: "${DB_NAME:-compose_manager}"
       MARIADB_USER: "${DB_USER:-compose_manager}"
@@ -109,7 +116,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7.4-alpine
+    image: ${BASE_IMAGE_PREFIX:-}redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD required}"]
     volumes:
       - type: bind

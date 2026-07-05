@@ -1,6 +1,6 @@
 services:
   state-init-agent:
-    image: alpine:3.22
+    image: ${BASE_IMAGE_PREFIX:-}alpine:3.22
     user: "0:0"
     environment:
       SERVER_USER: "${SERVER_USER:?SERVER_USER required, set to the host service UID:GID such as 1000:1000}"
@@ -26,7 +26,10 @@ services:
     restart: "no"
 
   agent:
-    build: ./server
+    build:
+      context: ./server
+      args:
+        BASE_IMAGE_PREFIX: ${BASE_IMAGE_PREFIX:-}
     environment:
       APP_MODE: "agent"
       PORT: "${AGENT_PORT:-8192}"
@@ -37,6 +40,7 @@ services:
       DOCKER_CONFIG: "/state/docker-config"
       AGENT_NAME: "${AGENT_NAME:?AGENT_NAME required}"
       AGENT_TOKEN: "${AGENT_TOKEN:?AGENT_TOKEN required}"
+      BASE_IMAGE_PREFIX: "${BASE_IMAGE_PREFIX:-}"
     user: "${SERVER_USER:?SERVER_USER required, set to the host service UID:GID such as 1000:1000}"
     group_add:
       - "${DOCKER_GID:-0}"

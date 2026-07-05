@@ -645,7 +645,8 @@ func runTarInRootHelper(tarArgs ...string) ([]byte, error) {
 	if err != nil || strings.TrimSpace(container) == "" {
 		return nil, fmt.Errorf("container hostname unavailable")
 	}
-	args := []string{"run", "--rm", "--user", "0:0", "--volumes-from", strings.TrimSpace(container), "alpine:3.22", "tar"}
+	helperImage := os.Getenv("BASE_IMAGE_PREFIX") + "alpine:3.22"
+	args := []string{"run", "--rm", "--user", "0:0", "--volumes-from", strings.TrimSpace(container), helperImage, "tar"}
 	args = append(args, tarArgs...)
 	return exec.Command("docker", args...).CombinedOutput()
 }
