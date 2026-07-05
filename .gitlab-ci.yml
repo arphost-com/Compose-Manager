@@ -253,7 +253,7 @@ deploy:docker02:
       install -m 600 "${tmp}" "${env_file}"
       rm -f "${tmp}"
       SH
-    - sudo -n -u "${DEPLOY_USER}" docker compose --project-directory "${DEPLOY_PATH}" --env-file "${DEPLOY_PATH}/.env" -f "${DEPLOY_PATH}/docker-compose.yml" up -d --build --remove-orphans
+    - sudo -n -u "${DEPLOY_USER}" sh -c 'cd "$1" && docker compose --env-file .env -f docker-compose.yml up -d --build --remove-orphans' sh "${DEPLOY_PATH}"
 
 smoke:docker02:
   stage: smoke
@@ -263,7 +263,7 @@ smoke:docker02:
     - when: on_success
   script:
     - export SMOKE_API_KEY="$(sudo -n -u "${DEPLOY_USER}" awk -F= '$1 == "API_KEY" { sub(/^[^=]*=/, ""); print; exit }' "${DEPLOY_PATH}/.env")"
-    - sudo -n -u "${DEPLOY_USER}" docker compose --project-directory "${DEPLOY_PATH}" --env-file "${DEPLOY_PATH}/.env" -f "${DEPLOY_PATH}/docker-compose.yml" ps
+    - sudo -n -u "${DEPLOY_USER}" sh -c 'cd "$1" && docker compose --env-file .env -f docker-compose.yml ps' sh "${DEPLOY_PATH}"
     - curl -fsS "http://127.0.0.1:${WEB_PORT}/health"
     - |
       curl -fsS \
