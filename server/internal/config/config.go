@@ -9,9 +9,12 @@ import (
 )
 
 type Config struct {
+	Mode          string
 	Port          int
 	Root          string
 	APIKey        string
+	AgentName     string
+	AgentToken    string
 	StateDir      string
 	HooksDir      string
 	LogDir        string
@@ -31,9 +34,12 @@ func Load() (*Config, error) {
 	port, _ := strconv.Atoi(getEnv("PORT", "8192"))
 
 	cfg := &Config{
+		Mode:          getEnv("APP_MODE", "server"),
 		Port:          port,
 		Root:          getEnv("ROOT", "/docker"),
 		APIKey:        getEnv("API_KEY", ""),
+		AgentName:     getEnv("AGENT_NAME", ""),
+		AgentToken:    getEnv("AGENT_TOKEN", ""),
 		StateDir:      getEnv("STATE_DIR", ""),
 		HooksDir:      getEnv("HOOKS_DIR", ""),
 		LogDir:        getEnv("LOG_DIR", ""),
@@ -50,6 +56,26 @@ func Load() (*Config, error) {
 		cacheTTL = 15
 	}
 	cfg.CacheTTL = time.Duration(cacheTTL) * time.Second
+
+	if cfg.AgentToken == "" {
+		cfg.AgentToken = cfg.APIKey
+	}
+
+	if cfg.Mode == "agent" {
+		if cfg.AgentToken == "" {
+			return nil, fmt.Errorf("AGENT_TOKEN or API_KEY environment variable is required in agent mode")
+		}
+		if cfg.AgentName == "" {
+			cfg.AgentName = hostnameFallback()
+		}
+		if cfg.StateDir == "" {
+			cfg.StateDir = defaultStateDir()
+		}
+		if cfg.HooksDir == "" {
+			cfg.HooksDir = filepath.Join(cfg.StateDir, "hooks")
+		}
+		return cfg, nil
+	}
 
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("API_KEY environment variable is required")
@@ -94,6 +120,14 @@ func defaultStateDir() string {
 		return filepath.Join(home, ".compose-manager")
 	}
 	return "/var/lib/compose-manager"
+}
+
+func hostnameFallback() string {
+	name, err := os.Hostname()
+	if err == nil && name != "" {
+		return name
+	}
+	return "compose-agent"
 }
 
 func databaseDSNFromEnv() string {

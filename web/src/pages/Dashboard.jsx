@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { projects, jobs, skills as skillsApi, system, registries } from '../api/client';
+import { projects, jobs, skills as skillsApi, system, registries, stackTemplates, agents as agentsApi, schedules as schedulesApi } from '../api/client';
 
 const ACTIONS = [
   { key: 'update', label: 'Update', title: 'Pull newer images, then recreate containers. Projects with update hooks run only their hook.' },
@@ -13,11 +13,15 @@ const ACTIONS = [
 export default function Dashboard() {
   const [projectList, setProjectList] = useState([]);
   const [skillList, setSkillList] = useState([]);
+  const [templateList, setTemplateList] = useState([]);
+  const [agentList, setAgentList] = useState([]);
+  const [scheduleList, setScheduleList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionResult, setActionResult] = useState(null);
   const [selected, setSelected] = useState([]);
   const [filters, setFilters] = useState({ includeInactive: true, runningOnly: false, query: '' });
+  const [quickFilter, setQuickFilter] = useState('all');
   const [timeout, setTimeoutValue] = useState(300);
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -28,16 +32,32 @@ export default function Dashboard() {
     overwrite: false,
   });
   const [registryForm, setRegistryForm] = useState({ registry: '', username: '', password: '' });
+  const [agentForm, setAgentForm] = useState({ name: '', base_url: '', token: '', enabled: true });
+  const [scheduleForm, setScheduleForm] = useState({
+    id: 0,
+    agent_id: '',
+    project: '',
+    action: 'update',
+    enabled: true,
+    interval_minutes: 1440,
+    timeout_seconds: 300,
+  });
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [projRes, skillRes] = await Promise.all([
+      const [projRes, skillRes, templateRes, agentRes, scheduleRes] = await Promise.all([
         projects.list({ include_inactive: filters.includeInactive ? 'true' : 'false', running_only: filters.runningOnly ? 'true' : 'false' }),
         skillsApi.list(),
+        stackTemplates.list(),
+        agentsApi.list(),
+        schedulesApi.list(),
       ]);
       setProjectList(projRes.data || []);
       setSkillList(skillRes.data || []);
+      setTemplateList(templateRes.data || []);
+      setAgentList(agentRes.data || []);
+      setScheduleList(scheduleRes.data || []);
       setError(null);
     } catch (err) {
       setError(err.message);
@@ -50,8 +70,13 @@ export default function Dashboard() {
 
   const filteredProjects = projectList.filter((p) => {
     const q = filters.query.trim().toLowerCase();
-    if (!q) return true;
-    return p.name.toLowerCase().includes(q) || p.dir.toLowerCase().includes(q);
+    if (q && !p.name.toLowerCase().includes(q) && !p.dir.toLowerCase().includes(q)) return false;
+    if (quickFilter === 'running') return p.running;
+    if (quickFilter === 'inactive') return p.inactive;
+    if (quickFilter === 'no_updates') return p.update_policy?.effective_policy === 'no_updates';
+    if (quickFilter === 'registry') return (p.image_sources || []).some(s => s.source_type === 'registry');
+    if (quickFilter === 'custom') return (p.image_sources || []).some(s => s.source_type === 'custom');
+    return true;
   });
 
   const running = projectList.filter(p => p.running).length;
@@ -59,6 +84,16 @@ export default function Dashboard() {
   const noUpdates = projectList.filter(p => p.update_policy?.effective_policy === 'no_updates').length;
   const customServices = projectList.reduce((sum, p) => sum + (p.image_sources || []).filter(s => s.source_type === 'custom').length, 0);
   const registryServices = projectList.reduce((sum, p) => sum + (p.image_sources || []).filter(s => s.source_type === 'registry').length, 0);
+
+  const setSummaryFilter = (filter) => {
+    setQuickFilter(filter);
+    if (filter === 'running') {
+      setFilters({ ...filters, includeInactive: true, runningOnly: false });
+    } else if (filter === 'inactive') {
+      setFilters({ ...filters, includeInactive: true, runningOnly: false });
+    }
+    setSelected([]);
+  };
 
   const runAction = async (name, action) => {
     try {
@@ -101,6 +136,23 @@ export default function Dashboard() {
     }
   };
 
+  const deleteProject = async (project) => {
+    const confirmName = window.prompt(`Type ${project.name} to delete the whole project directory.`);
+    if (confirmName !== project.name) {
+      setActionResult({ label: `delete ${project.name}`, status: 'error', error: 'Project name confirmation did not match.' });
+      return;
+    }
+    try {
+      setActionResult({ label: `delete ${project.name}`, status: 'running' });
+      const res = await projects.delete(project.name, { confirm_name: confirmName, stop_first: true });
+      setActionResult({ label: `delete ${project.name}`, status: 'done', result: res.data });
+      setSelected(selected.filter(name => name !== project.name));
+      fetchData();
+    } catch (err) {
+      setActionResult({ label: `delete ${project.name}`, status: 'error', error: err.message });
+    }
+  };
+
   const createProject = async (event) => {
     event.preventDefault();
     try {
@@ -115,6 +167,74 @@ export default function Dashboard() {
     }
   };
 
+  const useTemplate = async (template) => {
+    setCreateForm({
+      name: template.id,
+      compose_content: template.compose_content,
+      env_content: template.env_content || '',
+      inactive: false,
+      overwrite: false,
+    });
+    setShowCreate(true);
+    setActionResult({ label: `template ${template.name}`, status: 'done', result: { output: template.notes || 'Template loaded into the project editor.' } });
+  };
+
+  const saveSchedule = async (event) => {
+    event.preventDefault();
+    const body = {
+      id: Number(scheduleForm.id) || undefined,
+      agent_id: scheduleForm.agent_id ? Number(scheduleForm.agent_id) : null,
+      project: scheduleForm.project,
+      action: scheduleForm.action,
+      enabled: scheduleForm.enabled,
+      interval_minutes: Number(scheduleForm.interval_minutes),
+      timeout_seconds: Number(scheduleForm.timeout_seconds),
+    };
+    try {
+      setActionResult({ label: 'save schedule', status: 'running' });
+      const res = await schedulesApi.save(body);
+      setActionResult({ label: 'save schedule', status: 'done', result: res.data });
+      setScheduleForm({ ...scheduleForm, id: 0, project: '' });
+      fetchData();
+    } catch (err) {
+      setActionResult({ label: 'save schedule', status: 'error', error: err.message });
+    }
+  };
+
+  const editSchedule = (schedule) => {
+    setScheduleForm({
+      id: schedule.id,
+      agent_id: schedule.agent_id || '',
+      project: schedule.project,
+      action: schedule.action || 'update',
+      enabled: Boolean(schedule.enabled),
+      interval_minutes: schedule.interval_minutes || 1440,
+      timeout_seconds: schedule.timeout_seconds || 300,
+    });
+  };
+
+  const runSchedule = async (schedule) => {
+    try {
+      setActionResult({ label: `run schedule ${schedule.project}`, status: 'running' });
+      const res = await schedulesApi.run(schedule.id);
+      setActionResult({ label: `run schedule ${schedule.project}`, status: 'done', result: res.data });
+      fetchData();
+    } catch (err) {
+      setActionResult({ label: `run schedule ${schedule.project}`, status: 'error', error: err.message });
+    }
+  };
+
+  const deleteSchedule = async (schedule) => {
+    try {
+      setActionResult({ label: `delete schedule ${schedule.project}`, status: 'running' });
+      await schedulesApi.delete(schedule.id);
+      setActionResult({ label: `delete schedule ${schedule.project}`, status: 'done' });
+      fetchData();
+    } catch (err) {
+      setActionResult({ label: `delete schedule ${schedule.project}`, status: 'error', error: err.message });
+    }
+  };
+
   const loginRegistry = async (event) => {
     event.preventDefault();
     try {
@@ -124,6 +244,31 @@ export default function Dashboard() {
       setRegistryForm({ registry: registryForm.registry, username: registryForm.username, password: '' });
     } catch (err) {
       setActionResult({ label: 'registry login', status: 'error', error: err.message });
+    }
+  };
+
+  const saveAgent = async (event) => {
+    event.preventDefault();
+    try {
+      setActionResult({ label: `save agent ${agentForm.name}`, status: 'running' });
+      const res = await agentsApi.save(agentForm);
+      setActionResult({ label: `save agent ${agentForm.name}`, status: 'done', result: res.data });
+      setAgentForm({ name: '', base_url: '', token: '', enabled: true });
+      fetchData();
+    } catch (err) {
+      setActionResult({ label: `save agent ${agentForm.name}`, status: 'error', error: err.message });
+    }
+  };
+
+  const deleteAgent = async (agent) => {
+    if (!window.confirm(`Delete agent ${agent.name}? Schedules for this agent will also be removed.`)) return;
+    try {
+      setActionResult({ label: `delete agent ${agent.name}`, status: 'running' });
+      await agentsApi.delete(agent.id);
+      setActionResult({ label: `delete agent ${agent.name}`, status: 'done' });
+      fetchData();
+    } catch (err) {
+      setActionResult({ label: `delete agent ${agent.name}`, status: 'error', error: err.message });
     }
   };
 
@@ -146,7 +291,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-950">Compose Manager</h1>
+          <h1 className="brand-wordmark text-4xl text-blue-900">ARPHost Compose Manager</h1>
           <p className="text-sm text-gray-600">Manage compose projects from the configured Docker root.</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -165,15 +310,44 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-        <StatCard label="Projects" value={projectList.length} />
-        <StatCard label="Running" value={running} />
-        <StatCard label="Inactive" value={inactive} />
-        <StatCard label="No updates" value={noUpdates} />
-        <StatCard label="Registry services" value={registryServices} />
-        <StatCard label="Custom builds" value={customServices} />
+        <StatCard label="Projects" value={projectList.length} active={quickFilter === 'all'} title="Show all discovered projects." onClick={() => setSummaryFilter('all')} />
+        <StatCard label="Running" value={running} active={quickFilter === 'running'} title="Show projects with running containers." onClick={() => setSummaryFilter('running')} />
+        <StatCard label="Inactive" value={inactive} active={quickFilter === 'inactive'} title="Show projects marked inactive." onClick={() => setSummaryFilter('inactive')} />
+        <StatCard label="No updates" value={noUpdates} active={quickFilter === 'no_updates'} title="Show projects whose update policy skips updates." onClick={() => setSummaryFilter('no_updates')} />
+        <StatCard label="Registry services" value={registryServices} active={quickFilter === 'registry'} title="Show projects with registry-backed services." onClick={() => setSummaryFilter('registry')} />
+        <StatCard label="Custom builds" value={customServices} active={quickFilter === 'custom'} title="Show projects with custom build services." onClick={() => setSummaryFilter('custom')} />
       </div>
 
       {actionResult && <ActionResult result={actionResult} onDismiss={() => setActionResult(null)} />}
+
+      <div className="section-panel">
+        <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-950">Stack Catalog</h2>
+            <p className="text-sm text-gray-600">Pick a common stack, edit the generated compose.yml and .env, then create it.</p>
+          </div>
+          <Badge tone="blue">{templateList.length} templates</Badge>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {templateList.map(template => (
+            <div key={template.id} className="rounded-md border border-gray-200 p-3 text-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-medium text-gray-950">{template.name}</div>
+                  <div className="mt-1 text-xs text-gray-500">{template.description}</div>
+                </div>
+                <Badge tone="gray">{template.category}</Badge>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {(template.tags || []).slice(0, 3).map(tag => <Badge key={tag} tone="cyan">{tag}</Badge>)}
+              </div>
+              <button title="Load this stack into the create-project editor so you can review and edit it before writing files." onClick={() => useTemplate(template)} className="mini-button mt-3">
+                Use
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {showCreate && (
         <form onSubmit={createProject} className="section-panel space-y-4">
@@ -226,6 +400,11 @@ export default function Dashboard() {
                 <input type="checkbox" checked={filters.runningOnly} onChange={e => setFilters({ ...filters, runningOnly: e.target.checked })} />
                 Running
               </label>
+              {quickFilter !== 'all' && (
+                <button title="Clear the summary-card filter." onClick={() => setSummaryFilter('all')} className="mini-button" type="button">
+                  Clear {quickFilter.replace('_', ' ')}
+                </button>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -275,6 +454,9 @@ export default function Dashboard() {
                           {action.label}
                         </button>
                       ))}
+                      <button disabled={!p.inactive} title={p.inactive ? 'Delete the whole project directory after exact-name confirmation.' : 'Mark the project inactive before deleting its directory.'} onClick={() => deleteProject(p)} className={p.inactive ? 'mini-danger' : 'mini-button opacity-50'}>
+                        Delete
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -283,6 +465,111 @@ export default function Dashboard() {
           </table>
           {filteredProjects.length === 0 && <div className="py-8 text-center text-gray-500">No projects match the current filters.</div>}
         </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
+        <div className="section-panel">
+          <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-950">Scheduled Updates</h2>
+              <p className="text-sm text-gray-600">Run update, pull, restart, start, stop, or status on a fixed interval.</p>
+            </div>
+            <Badge tone="blue">{scheduleList.length} schedules</Badge>
+          </div>
+          <form onSubmit={saveSchedule} className="mb-4 grid gap-3 lg:grid-cols-6">
+            <Field label="Agent" title="Leave local for this server, or choose a registered agent.">
+              <select value={scheduleForm.agent_id} onChange={e => setScheduleForm({ ...scheduleForm, agent_id: e.target.value })} className="input">
+                <option value="">Local</option>
+                {agentList.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Project" title="Project folder name on the selected server or agent.">
+              <input required list="local-projects" value={scheduleForm.project} onChange={e => setScheduleForm({ ...scheduleForm, project: e.target.value })} className="input" placeholder="project-name" />
+              <datalist id="local-projects">
+                {projectList.map(p => <option key={p.name} value={p.name} />)}
+              </datalist>
+            </Field>
+            <Field label="Action" title="Scheduled compose action. Update respects no-update project policy.">
+              <select value={scheduleForm.action} onChange={e => setScheduleForm({ ...scheduleForm, action: e.target.value })} className="input">
+                {ACTIONS.map(action => <option key={action.key} value={action.key}>{action.label}</option>)}
+                <option value="status">Status</option>
+              </select>
+            </Field>
+            <Field label="Every minutes" title="Minimum 5 minutes. Use 1440 for daily.">
+              <input type="number" min="5" value={scheduleForm.interval_minutes} onChange={e => setScheduleForm({ ...scheduleForm, interval_minutes: Number(e.target.value) })} className="input" />
+            </Field>
+            <Field label="Timeout" title="Seconds before pull/update commands time out.">
+              <input type="number" min="0" value={scheduleForm.timeout_seconds} onChange={e => setScheduleForm({ ...scheduleForm, timeout_seconds: Number(e.target.value) })} className="input" />
+            </Field>
+            <div className="flex items-end gap-2">
+              <label className="mb-2 flex items-center gap-2 text-sm text-gray-700" title="Disable to keep the schedule saved without running it.">
+                <input type="checkbox" checked={scheduleForm.enabled} onChange={e => setScheduleForm({ ...scheduleForm, enabled: e.target.checked })} />
+                Enabled
+              </label>
+              <button type="submit" title="Save this schedule to MariaDB." className="btn-primary">{scheduleForm.id ? 'Update' : 'Add'}</button>
+            </div>
+          </form>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[840px] text-left text-sm">
+              <thead><tr className="border-b border-gray-200 text-xs uppercase text-gray-500"><th className="py-2">Target</th><th>Action</th><th>Interval</th><th>Next</th><th>Last</th><th className="text-right">Tools</th></tr></thead>
+              <tbody>
+                {scheduleList.map(schedule => (
+                  <tr key={schedule.id} className="border-b border-gray-100">
+                    <td className="py-2">
+                      <div className="font-medium">{schedule.project}</div>
+                      <div className="text-xs text-gray-500">{schedule.agent_name || 'Local'}</div>
+                    </td>
+                    <td><Badge tone={schedule.enabled ? 'green' : 'gray'}>{schedule.action}</Badge></td>
+                    <td>{schedule.interval_minutes}m</td>
+                    <td className="text-xs text-gray-500">{formatDate(schedule.next_run_at)}</td>
+                    <td className="text-xs text-gray-500">{schedule.last_status || 'never'} {schedule.last_job_id ? `· ${schedule.last_job_id}` : ''}</td>
+                    <td>
+                      <div className="flex justify-end gap-1">
+                        <button title="Run this schedule now and update its next-run time." onClick={() => runSchedule(schedule)} className="mini-button">Run</button>
+                        <button title="Load this schedule into the edit form." onClick={() => editSchedule(schedule)} className="mini-button">Edit</button>
+                        <button title="Delete this schedule." onClick={() => deleteSchedule(schedule)} className="mini-danger">Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {scheduleList.length === 0 && <div className="py-6 text-gray-500">No schedules configured.</div>}
+          </div>
+        </div>
+
+        <form onSubmit={saveAgent} className="section-panel space-y-3">
+          <h2 className="text-lg font-semibold text-gray-950">Agents</h2>
+          <Field label="Name" title="Friendly name for the remote compose host.">
+            <input value={agentForm.name} onChange={e => setAgentForm({ ...agentForm, name: e.target.value })} className="input" placeholder="docker03" />
+          </Field>
+          <Field label="Agent URL" title="Base URL for the remote Compose Manager agent, for example https://docker03.example.com.">
+            <input value={agentForm.base_url} onChange={e => setAgentForm({ ...agentForm, base_url: e.target.value })} className="input" placeholder="https://host:8192" />
+          </Field>
+          <Field label="Token" title="Bearer token used by the controller to call this agent.">
+            <input type="password" value={agentForm.token} onChange={e => setAgentForm({ ...agentForm, token: e.target.value })} className="input" />
+          </Field>
+          <label className="flex items-center gap-2 text-sm text-gray-700" title="Disabled agents remain saved but scheduled actions will not run.">
+            <input type="checkbox" checked={agentForm.enabled} onChange={e => setAgentForm({ ...agentForm, enabled: e.target.checked })} />
+            Enabled
+          </label>
+          <button type="submit" title="Save this agent connection." className="btn-secondary w-full">Save Agent</button>
+          <div className="space-y-2 pt-2">
+            {agentList.map(agent => (
+              <div key={agent.id} className="flex items-center justify-between gap-2 rounded-md border border-gray-200 p-2 text-sm">
+                <div>
+                  <div className="font-medium">{agent.name}</div>
+                  <div className="max-w-[260px] truncate text-xs text-gray-500" title={agent.base_url}>{agent.base_url}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge tone={agent.enabled ? 'green' : 'gray'}>{agent.enabled ? 'on' : 'off'}</Badge>
+                  <button title="Delete this agent and its schedules." type="button" onClick={() => deleteAgent(agent)} className="mini-danger">Delete</button>
+                </div>
+              </div>
+            ))}
+            {agentList.length === 0 && <div className="py-3 text-sm text-gray-500">No agents registered.</div>}
+          </div>
+        </form>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
@@ -334,13 +621,20 @@ function SourceSummary({ sources }) {
   );
 }
 
-function StatCard({ label, value }) {
+function StatCard({ label, value, active, title, onClick }) {
   return (
-    <div className="section-panel py-4">
+    <button type="button" title={title} onClick={onClick} className={`section-panel py-4 text-left transition hover:border-blue-300 hover:bg-blue-50 ${active ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : ''}`}>
       <div className="text-2xl font-semibold text-gray-950">{value}</div>
       <div className="text-sm text-gray-500">{label}</div>
-    </div>
+    </button>
   );
+}
+
+function formatDate(value) {
+  if (!value) return 'none';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'none';
+  return date.toLocaleString();
 }
 
 function Field({ label, title, children }) {

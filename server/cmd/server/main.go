@@ -35,6 +35,10 @@ func main() {
 
 	// Core engine
 	engine := core.NewEngine(cfg.Root, cfg.HooksDir)
+	if cfg.Mode == "agent" {
+		runAgent(cfg, engine)
+		return
+	}
 	appStore, err := storage.New(context.Background(), cfg.DatabaseDSN, cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB, cfg.CacheTTL)
 	if err != nil {
 		log.Fatalf("storage init: %v", err)
@@ -45,6 +49,9 @@ func main() {
 	}
 
 	jobs := core.NewJobManager(appStore)
+	scheduler := core.NewScheduleManager(engine, jobs, appStore)
+	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
+	scheduler.Start(schedulerCtx)
 	userStore, err := cmauth.NewStore(appStore, cfg.AdminUsername, cfg.AdminPassword)
 	if err != nil {
 		log.Fatalf("users init: %v", err)
@@ -70,6 +77,8 @@ func main() {
 
 	// Handlers
 	projectHandler := handlers.NewProjectHandler(engine, jobs, appStore)
+	agentHandler := handlers.NewAgentHandler(appStore)
+	scheduleHandler := handlers.NewScheduleHandler(appStore, scheduler)
 	skillHandler := handlers.NewSkillHandler(registry)
 	authHandler := handlers.NewAuthHandler(userStore, sessionManager)
 
@@ -112,6 +121,7 @@ func main() {
 			r.Post("/projects", projectHandler.Create)
 			r.Get("/projects", projectHandler.List)
 			r.Get("/projects/{name}", projectHandler.Get)
+			r.Delete("/projects/{name}", projectHandler.Delete)
 			r.Get("/projects/{name}/images", projectHandler.Images)
 			r.Get("/projects/{name}/status", projectHandler.Status)
 			r.Post("/projects/{name}/pull", projectHandler.Pull)
@@ -132,6 +142,15 @@ func main() {
 			r.Post("/registries/login", projectHandler.RegistryLogin)
 			r.Get("/jobs", projectHandler.ListJobs)
 			r.Get("/jobs/{jobId}", projectHandler.GetJob)
+			r.Get("/stack-templates", handlers.ListStackTemplates)
+			r.Get("/stack-templates/{templateID}", handlers.GetStackTemplate)
+			r.Get("/agents", agentHandler.List)
+			r.Post("/agents", agentHandler.Save)
+			r.Delete("/agents/{agentID}", agentHandler.Delete)
+			r.Get("/schedules", scheduleHandler.List)
+			r.Post("/schedules", scheduleHandler.Save)
+			r.Delete("/schedules/{scheduleID}", scheduleHandler.Delete)
+			r.Post("/schedules/{scheduleID}/run", scheduleHandler.RunNow)
 
 			// Skills
 			r.Route("/skills", func(sr chi.Router) {
@@ -169,7 +188,66 @@ func main() {
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	stopScheduler()
 	registry.ShutdownAll(shutCtx)
 	srv.Shutdown(shutCtx)
 	log.Println("server stopped")
+}
+
+func runAgent(cfg *config.Config, engine *core.Engine) {
+	jobs := core.NewJobManager(nil)
+	agentHandler := handlers.NewAgentRuntimeHandler(engine, jobs, cfg.AgentToken, cfg.AgentName)
+
+	r := chi.NewRouter()
+	r.Use(chimw.Logger)
+	r.Use(chimw.Recoverer)
+	r.Use(chimw.RealIP)
+	r.Use(chimw.Timeout(5 * time.Minute))
+
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok","mode":"agent"}`))
+	})
+
+	r.Route("/agent/v1", func(r chi.Router) {
+		r.Use(agentHandler.Auth)
+		r.Get("/health", agentHandler.Health)
+		r.Get("/projects", agentHandler.ListProjects)
+		r.Get("/projects/{name}", agentHandler.GetProject)
+		r.Get("/projects/{name}/images", agentHandler.Images)
+		r.Get("/projects/{name}/status", agentHandler.Status)
+		r.Post("/projects/{name}/jobs/{action}", agentHandler.StartJob)
+		r.Get("/jobs", agentHandler.ListJobs)
+		r.Get("/jobs/{jobId}", agentHandler.GetJob)
+		r.Get("/debug/logs/{name}", agentHandler.Logs)
+		r.Get("/debug/stats/{name}", agentHandler.Stats)
+		r.Post("/registries/login", agentHandler.RegistryLogin)
+		r.Post("/prune", agentHandler.Prune)
+	})
+
+	addr := fmt.Sprintf(":%d", cfg.Port)
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      r,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 5 * time.Minute,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		log.Printf("Compose Manager agent %q starting on %s (root: %s)", cfg.AgentName, addr, cfg.Root)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("agent server: %v", err)
+		}
+	}()
+
+	<-done
+	log.Println("shutting down agent...")
+	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	srv.Shutdown(shutCtx)
+	log.Println("agent stopped")
 }

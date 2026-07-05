@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const inactiveMarker = ".inactive"
@@ -113,6 +114,61 @@ func (e *Engine) SetInactive(name string, inactive bool) error {
 	}
 
 	return nil
+}
+
+// DeleteProject stops a compose project and removes its directory.
+func (e *Engine) DeleteProject(name string, req DeleteProjectRequest) (*OpResult, error) {
+	project, err := e.GetProject(name)
+	if err != nil {
+		return nil, err
+	}
+	if req.ConfirmName != project.Name {
+		return nil, fmt.Errorf("confirmation must exactly match project name")
+	}
+	if !project.Inactive {
+		return nil, fmt.Errorf("project must be marked inactive before it can be deleted")
+	}
+	rootAbs, err := filepath.Abs(e.RootDir)
+	if err != nil {
+		return nil, err
+	}
+	projectAbs, err := filepath.Abs(project.Dir)
+	if err != nil {
+		return nil, err
+	}
+	if projectAbs == rootAbs {
+		return nil, fmt.Errorf("refusing to delete the configured Docker root")
+	}
+	rel, err := filepath.Rel(rootAbs, projectAbs)
+	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." || filepath.IsAbs(rel) {
+		return nil, fmt.Errorf("project directory is outside the configured Docker root")
+	}
+	if strings.Contains(rel, string(os.PathSeparator)) {
+		return nil, fmt.Errorf("project directory must be an immediate child of the configured Docker root")
+	}
+
+	result := &OpResult{
+		Project: project.Name,
+		Action:  "delete",
+		Success: true,
+	}
+	if req.StopFirst {
+		down := e.Down(project)
+		result.Output += "=== docker compose down ===\n" + down.Output + "\n"
+		if !down.Success {
+			result.Success = false
+			result.ExitCode = down.ExitCode
+			return result, fmt.Errorf("compose down failed")
+		}
+	}
+	if err := os.RemoveAll(projectAbs); err != nil {
+		result.Success = false
+		result.ExitCode = 1
+		result.Output += err.Error() + "\n"
+		return result, err
+	}
+	result.Output += "deleted directory: " + projectAbs + "\n"
+	return result, nil
 }
 
 // Prune runs docker system prune.

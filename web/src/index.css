@@ -3,6 +3,12 @@
 @tailwind utilities;
 
 @layer components {
+  .brand-wordmark {
+    font-family: "Brush Script MT", "Segoe Script", "Apple Chancery", cursive;
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+
   .section-panel {
     @apply rounded-md border border-gray-200 bg-white p-4 shadow-sm;
   }

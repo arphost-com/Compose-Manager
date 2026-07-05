@@ -1,0 +1,207 @@
+package handlers
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/arphost-com/Compose-Manager/server/internal/core"
+	"github.com/arphost-com/Compose-Manager/server/internal/storage"
+	"github.com/go-chi/chi/v5"
+)
+
+type ScheduleHandler struct {
+	Store     *storage.Store
+	Scheduler *core.ScheduleManager
+}
+
+func NewScheduleHandler(store *storage.Store, scheduler *core.ScheduleManager) *ScheduleHandler {
+	return &ScheduleHandler{Store: store, Scheduler: scheduler}
+}
+
+func (h *ScheduleHandler) List(w http.ResponseWriter, r *http.Request) {
+	schedules, err := h.Store.ListSchedules(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, schedules)
+}
+
+func (h *ScheduleHandler) Save(w http.ResponseWriter, r *http.Request) {
+	var req core.UpdateScheduleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	normalizeSchedule(&req)
+	if err := validateSchedule(req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	schedule, err := h.Store.SaveSchedule(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, schedule)
+}
+
+func (h *ScheduleHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Param(r, "scheduleID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.Store.DeleteSchedule(r.Context(), id); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "schedule not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"deleted": true})
+}
+
+func (h *ScheduleHandler) RunNow(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Param(r, "scheduleID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	schedule, err := h.Store.GetSchedule(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "schedule not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if h.Scheduler == nil {
+		writeError(w, http.StatusInternalServerError, "scheduler is not running")
+		return
+	}
+	if err := h.Scheduler.RunNow(r.Context(), *schedule); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	updated, err := h.Store.GetSchedule(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusAccepted, schedule)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, updated)
+}
+
+type AgentHandler struct {
+	Store *storage.Store
+}
+
+func NewAgentHandler(store *storage.Store) *AgentHandler {
+	return &AgentHandler{Store: store}
+}
+
+func (h *AgentHandler) List(w http.ResponseWriter, r *http.Request) {
+	agents, err := h.Store.ListAgents(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, agents)
+}
+
+func (h *AgentHandler) Save(w http.ResponseWriter, r *http.Request) {
+	var req core.ComposeAgentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.BaseURL = strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
+	if req.Name == "" || req.BaseURL == "" {
+		writeError(w, http.StatusBadRequest, "agent name and URL are required")
+		return
+	}
+	agent, err := h.Store.SaveAgent(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, agent)
+}
+
+func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, err := parseInt64Param(r, "agentID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := h.Store.DeleteAgent(r.Context(), id); err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"deleted": true})
+}
+
+func ListStackTemplates(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, core.BuiltinStackTemplates())
+}
+
+func GetStackTemplate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "templateID")
+	template, ok := core.GetBuiltinStackTemplate(id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "template not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, template)
+}
+
+func normalizeSchedule(req *core.UpdateScheduleRequest) {
+	req.Project = strings.TrimSpace(req.Project)
+	req.Action = strings.ToLower(strings.TrimSpace(req.Action))
+	if req.Action == "" {
+		req.Action = "update"
+	}
+	if req.TimeoutSeconds <= 0 {
+		req.TimeoutSeconds = 300
+	}
+	if req.NextRunAt != nil {
+		next := req.NextRunAt.UTC().Truncate(time.Second)
+		req.NextRunAt = &next
+	}
+}
+
+func validateSchedule(req core.UpdateScheduleRequest) error {
+	if req.Project == "" {
+		return errors.New("project is required")
+	}
+	if !core.ValidJobAction(req.Action) {
+		return errors.New("invalid action")
+	}
+	if req.IntervalMinutes < 5 {
+		return errors.New("interval must be at least 5 minutes")
+	}
+	if req.TimeoutSeconds < 0 {
+		return errors.New("timeout cannot be negative")
+	}
+	return nil
+}
+
+func parseInt64Param(r *http.Request, name string) (int64, error) {
+	raw := chi.URLParam(r, name)
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id < 1 {
+		return 0, errors.New("invalid id")
+	}
+	return id, nil
+}

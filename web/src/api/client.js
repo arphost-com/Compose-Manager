@@ -48,6 +48,7 @@ export const projects = {
     return request(`/projects${qs ? '?' + qs : ''}`);
   },
   create: (body) => request('/projects', { method: 'POST', body: JSON.stringify(body) }),
+  delete: (name, body) => request(`/projects/${name}`, { method: 'DELETE', body: JSON.stringify(body) }),
   get: (name) => request(`/projects/${name}`),
   images: (name) => request(`/projects/${name}/images`),
   status: (name) => request(`/projects/${name}/status`),
@@ -66,6 +67,24 @@ export const projects = {
 export const jobs = {
   list: () => request('/jobs'),
   get: (id) => request(`/jobs/${id}`),
+};
+
+export const stackTemplates = {
+  list: () => request('/stack-templates'),
+  get: (id) => request(`/stack-templates/${encodeURIComponent(id)}`),
+};
+
+export const agents = {
+  list: () => request('/agents'),
+  save: (body) => request('/agents', { method: 'POST', body: JSON.stringify(body) }),
+  delete: (id) => request(`/agents/${id}`, { method: 'DELETE' }),
+};
+
+export const schedules = {
+  list: () => request('/schedules'),
+  save: (body) => request('/schedules', { method: 'POST', body: JSON.stringify(body) }),
+  delete: (id) => request(`/schedules/${id}`, { method: 'DELETE' }),
+  run: (id) => request(`/schedules/${id}/run`, { method: 'POST' }),
 };
 
 export const skills = {

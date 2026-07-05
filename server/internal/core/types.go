@@ -62,6 +62,12 @@ type CreateProjectRequest struct {
 	Overwrite      bool   `json:"overwrite,omitempty"`
 }
 
+// DeleteProjectRequest removes a compose project directory after exact-name confirmation.
+type DeleteProjectRequest struct {
+	ConfirmName string `json:"confirm_name"`
+	StopFirst   bool   `json:"stop_first"`
+}
+
 // RegistryLoginRequest logs Docker into a registry using password-stdin.
 type RegistryLoginRequest struct {
 	Registry string `json:"registry,omitempty"`
@@ -134,4 +140,55 @@ type SecurityReport struct {
 	Findings  []SecurityFinding `json:"findings"`
 	ScannedAt time.Time         `json:"scanned_at"`
 	Summary   map[string]int    `json:"summary"`
+}
+
+// ComposeAgent describes a remote Docker Compose host managed by the controller.
+type ComposeAgent struct {
+	ID        int64      `json:"id"`
+	Name      string     `json:"name"`
+	BaseURL   string     `json:"base_url"`
+	Enabled   bool       `json:"enabled"`
+	LastSeen  *time.Time `json:"last_seen,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	Token     string     `json:"-"`
+}
+
+// ComposeAgentRequest creates or updates a remote Docker Compose agent.
+type ComposeAgentRequest struct {
+	Name    string `json:"name"`
+	BaseURL string `json:"base_url"`
+	Token   string `json:"token,omitempty"`
+	Enabled *bool  `json:"enabled,omitempty"`
+}
+
+// UpdateSchedule runs compose actions automatically for a local project or agent project.
+type UpdateSchedule struct {
+	ID              int64      `json:"id"`
+	AgentID         *int64     `json:"agent_id,omitempty"`
+	AgentName       string     `json:"agent_name,omitempty"`
+	Project         string     `json:"project"`
+	Action          string     `json:"action"`
+	Enabled         bool       `json:"enabled"`
+	IntervalMinutes int        `json:"interval_minutes"`
+	TimeoutSeconds  int        `json:"timeout_seconds"`
+	NextRunAt       time.Time  `json:"next_run_at"`
+	LastRunAt       *time.Time `json:"last_run_at,omitempty"`
+	LastJobID       string     `json:"last_job_id,omitempty"`
+	LastStatus      string     `json:"last_status,omitempty"`
+	LastError       string     `json:"last_error,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// UpdateScheduleRequest creates or updates an automatic compose action schedule.
+type UpdateScheduleRequest struct {
+	ID              int64      `json:"id,omitempty"`
+	AgentID         *int64     `json:"agent_id,omitempty"`
+	Project         string     `json:"project"`
+	Action          string     `json:"action,omitempty"`
+	Enabled         *bool      `json:"enabled,omitempty"`
+	IntervalMinutes int        `json:"interval_minutes"`
+	TimeoutSeconds  int        `json:"timeout_seconds,omitempty"`
+	NextRunAt       *time.Time `json:"next_run_at,omitempty"`
 }

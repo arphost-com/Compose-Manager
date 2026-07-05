@@ -79,10 +79,11 @@ The web/API surface also supports per-project update policies:
 - **Dry-run mode** for safe simulation
 - **Automatic logging** to timestamped files
 - **Ctrl-C handling** - graceful interruption with summary output
-- **Web dashboard** for project creation, management, updates, statistics, logging, backups, database checks, image-source classification, registry login, and user management
+- **Web dashboard** for project creation, one-click stack templates, management, updates, statistics, logging, backups, database checks, image-source classification, registry login, schedules, agents, and user management
 - **Live action sessions** for update/pull/start/stop/restart with saved logs
-- **MariaDB-backed state** for users, action history, and project settings
-- **Redis-backed sessions and cache** for project/image/job/settings reads
+- **Scheduled updates** for local projects and registered agents
+- **MariaDB-backed state** for users, action history, project settings, agents, and schedules
+- **Redis-backed sessions and cache** for project/image/job/settings/agent/schedule reads
 
 ---
 
@@ -170,7 +171,7 @@ Environment reference:
 | `API_KEY` | none | Required legacy/API key used for API access and as the first-admin password fallback when `ADMIN_PASSWORD` is unset. Use a long random value. |
 | `ADMIN_USERNAME` | `admin` | Username created only when the MariaDB users table is empty. |
 | `ADMIN_PASSWORD` | empty | Optional first-admin password. If empty, the app uses `API_KEY` for initial bootstrap login. Rotate it after first login. |
-| `DB_NAME` | `compose_manager` | MariaDB database name for users, action history, project settings, and update policies. |
+| `DB_NAME` | `compose_manager` | MariaDB database name for users, action history, project settings, update policies, agents, and schedules. |
 | `DB_USER` | `compose_manager` | MariaDB application user. |
 | `DB_PASSWORD` | none | Required password for the MariaDB application user. |
 | `DB_ROOT_PASSWORD` | none | Required MariaDB root password used by the MariaDB container during initialization. |
@@ -217,7 +218,7 @@ Persistent state is stored under `STATE_DIR`:
 
 | Path | Purpose |
 |------|---------|
-| `mariadb/` | MariaDB data for users, jobs, project settings |
+| `mariadb/` | MariaDB data for users, jobs, project settings, agents, schedules |
 | `redis/` | Redis append-only data for sessions/cache |
 | `hooks/` | Update hooks used by the API server |
 | `backups/` | Project backups and database dumps |
@@ -243,6 +244,44 @@ The dashboard can mark a project as not updateable when it is built directly fro
 | `no_updates` | Skip update actions and save a skipped action session with the configured reason |
 
 Use the Project Detail overview page to view or override the policy.
+
+### Stack Catalog
+
+The dashboard includes a built-in stack catalog modeled after Docker GUI template flows such as Kitematic image browsing and Portainer app templates. Choosing a template does not deploy immediately; it loads editable `compose.yml` and `.env` content into the Create Project form so the operator can review paths, ports, passwords, and volumes first.
+
+Initial built-in templates include WordPress/MariaDB, Nginx static site, PostgreSQL, Redis, Gitea, Uptime Kuma, Portainer Agent, and Prometheus/Grafana. These are normal Compose projects after creation and can be edited later on disk like any other project.
+
+### Scheduled Updates And Agents
+
+Schedules are stored in MariaDB and cached in Redis. A schedule can target:
+
+- `Local` - a project on the main Compose Manager host.
+- A registered agent - a remote Compose Manager agent running on another Docker host.
+
+Schedules support `update`, `pull`, `up`, `restart`, `down`, and `status`. Scheduled `update` respects the project update policy; projects marked `no_updates` record a skipped session instead of pulling.
+
+Remote agents use the same server image in agent mode:
+
+```bash
+APP_MODE=agent
+AGENT_NAME=docker03
+AGENT_TOKEN=change-me-to-a-secure-random-token
+ROOT=/home/debian/docker
+STATE_DIR=.compose-manager
+PORT=8192
+```
+
+Agent mode does not require MariaDB or Redis. The main server stores the agent URL and token, then calls `/agent/v1` on that host for project lists, jobs, logs, stats, registry login, and prune operations.
+
+### Project Deletion
+
+Directory deletion is intentionally gated:
+
+1. Mark the project inactive first.
+2. Click Delete.
+3. Type the exact project name when prompted.
+
+The API enforces the same rule and refuses to delete the configured Docker root or any path outside the configured `DOCKER_ROOT`. By default deletion runs `docker compose down` before removing the whole project directory.
 
 ### GitLab Pipeline
 

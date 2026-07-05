@@ -345,6 +345,10 @@ func setJobError(job *ActionJob, msg string) {
 }
 
 func validJobAction(action string) bool {
+	return ValidJobAction(action)
+}
+
+func ValidJobAction(action string) bool {
 	switch action {
 	case "pull", "up", "down", "restart", "status", "update":
 		return true

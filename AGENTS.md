@@ -7,7 +7,7 @@ Repository guidance for coding agents working on Compose Manager.
 Compose Manager has two supported surfaces:
 
 1. `compose-manager.sh` - Bash CLI for discovering and managing Docker Compose projects under a root directory.
-2. `server/` + `web/` - Go REST API with a React dashboard for compose operations, logs, stats, backups, database checks, security scans, registry login, and project creation.
+2. `server/` + `web/` - Go REST API with a React dashboard for compose operations, logs, stats, backups, database checks, security scans, registry login, stack templates, schedules, agents, and project creation/deletion.
 
 Use the existing patterns. Keep CLI and API behavior aligned when both surfaces implement the same operation.
 
@@ -55,11 +55,11 @@ Entry point: `server/cmd/server/main.go`
 
 Main packages:
 
-- `server/internal/core/` - discovery, compose execution, hooks, project creation, image source classification, registry login, update policy detection.
+- `server/internal/core/` - discovery, compose execution, hooks, project creation/deletion, stack templates, scheduler, image source classification, registry login, update policy detection.
 - `server/internal/handlers/` - project, system, registry, and skill HTTP handlers.
 - `server/internal/middleware/` - API key auth.
 - `server/internal/skills/` - modular skill registry and built-in skills.
-- `server/internal/storage/` - MariaDB schema, Redis cache helpers, users/jobs/project settings persistence, and legacy flat-file import.
+- `server/internal/storage/` - MariaDB schema, Redis cache helpers, users/jobs/project settings/agents/schedules persistence, and legacy flat-file import.
 
 Core routes are protected with login bearer sessions or legacy `X-API-Key`; `/health` and `POST /api/v1/auth/login` are public.
 
@@ -69,6 +69,7 @@ Core project routes:
 POST   /api/v1/projects
 GET    /api/v1/projects
 GET    /api/v1/projects/{name}
+DELETE /api/v1/projects/{name}
 GET    /api/v1/projects/{name}/images
 GET    /api/v1/projects/{name}/status
 GET    /api/v1/projects/{name}/update-policy
@@ -82,10 +83,23 @@ POST   /api/v1/projects/{name}/jobs/{action}
 PUT    /api/v1/projects/{name}/inactive
 GET    /api/v1/jobs
 GET    /api/v1/jobs/{jobId}
+GET    /api/v1/stack-templates
+GET    /api/v1/stack-templates/{templateID}
+GET    /api/v1/agents
+POST   /api/v1/agents
+DELETE /api/v1/agents/{agentID}
+GET    /api/v1/schedules
+POST   /api/v1/schedules
+DELETE /api/v1/schedules/{scheduleID}
+POST   /api/v1/schedules/{scheduleID}/run
 POST   /api/v1/projects/bulk/{action}
 POST   /api/v1/prune
 POST   /api/v1/registries/login
 ```
+
+Project directory deletion must require the project to be inactive first, require exact-name confirmation, run only against a discovered project, and refuse to delete the configured root or paths outside `ROOT`.
+
+`APP_MODE=agent` runs the same server binary without MariaDB/Redis and exposes `/agent/v1` with bearer-token auth via `AGENT_TOKEN`. Keep controller routes under `/api/v1`; keep agent runtime routes under `/agent/v1`.
 
 Response envelope:
 
@@ -119,7 +133,7 @@ React app in `web/src`.
 
 Important files:
 
-- `web/src/pages/Dashboard.jsx` - main management console, filters, bulk actions, creation, registry login.
+- `web/src/pages/Dashboard.jsx` - main management console, clickable summary filters, stack catalog, schedules, agents, filters, bulk actions, creation, deletion, registry login.
 - `web/src/pages/ProjectDetail.jsx` - project actions, image sources, logs, stats, security, backups, DB checks, inspect, processes.
 - `web/src/pages/Login.jsx` - username/password login.
 - `web/src/pages/Settings.jsx` - account info, logout, and admin user management.

@@ -121,6 +121,36 @@ func (s *Store) Migrate(ctx context.Context) error {
 			created_at DATETIME(6) NOT NULL,
 			updated_at DATETIME(6) NOT NULL
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS compose_agents (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			name VARCHAR(128) NOT NULL UNIQUE,
+			base_url VARCHAR(512) NOT NULL,
+			token TEXT NOT NULL,
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			last_seen DATETIME(6) NULL,
+			created_at DATETIME(6) NOT NULL,
+			updated_at DATETIME(6) NOT NULL,
+			INDEX idx_compose_agents_enabled (enabled)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS update_schedules (
+			id BIGINT AUTO_INCREMENT PRIMARY KEY,
+			agent_id BIGINT NULL,
+			project VARCHAR(255) NOT NULL,
+			action VARCHAR(64) NOT NULL DEFAULT 'update',
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			interval_minutes INT NOT NULL,
+			timeout_seconds INT NOT NULL DEFAULT 300,
+			next_run_at DATETIME(6) NOT NULL,
+			last_run_at DATETIME(6) NULL,
+			last_job_id VARCHAR(128) NOT NULL DEFAULT '',
+			last_status VARCHAR(64) NOT NULL DEFAULT '',
+			last_error TEXT NULL,
+			created_at DATETIME(6) NOT NULL,
+			updated_at DATETIME(6) NOT NULL,
+			INDEX idx_update_schedules_due (enabled, next_run_at),
+			INDEX idx_update_schedules_agent_project (agent_id, project),
+			CONSTRAINT fk_update_schedules_agent FOREIGN KEY (agent_id) REFERENCES compose_agents(id) ON DELETE CASCADE
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.DB.ExecContext(ctx, stmt); err != nil {
@@ -128,6 +158,259 @@ func (s *Store) Migrate(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) ListAgents(ctx context.Context) ([]core.ComposeAgent, error) {
+	var cached []core.ComposeAgent
+	if s.GetJSON(ctx, "agents:list", &cached) {
+		return cached, nil
+	}
+
+	rows, err := s.DB.QueryContext(ctx, `SELECT id, name, base_url, token, enabled, last_seen, created_at, updated_at FROM compose_agents ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	agents := make([]core.ComposeAgent, 0)
+	for rows.Next() {
+		agent, err := scanAgent(rows)
+		if err != nil {
+			return nil, err
+		}
+		agents = append(agents, *agent)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	s.SetJSON(ctx, "agents:list", agents, s.CacheTTL)
+	return agents, nil
+}
+
+func (s *Store) GetAgent(ctx context.Context, id int64) (*core.ComposeAgent, error) {
+	agent, err := scanAgent(s.DB.QueryRowContext(ctx, `SELECT id, name, base_url, token, enabled, last_seen, created_at, updated_at FROM compose_agents WHERE id=?`, id))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return agent, nil
+}
+
+func (s *Store) SaveAgent(ctx context.Context, req core.ComposeAgentRequest) (*core.ComposeAgent, error) {
+	now := time.Now().UTC()
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	res, err := s.DB.ExecContext(ctx, `INSERT INTO compose_agents
+		(name, base_url, token, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			base_url=VALUES(base_url),
+			token=IF(VALUES(token)='', token, VALUES(token)),
+			enabled=VALUES(enabled),
+			updated_at=VALUES(updated_at)`,
+		req.Name, req.BaseURL, req.Token, enabled, now, now)
+	if err != nil {
+		return nil, err
+	}
+	s.DeleteCache(ctx, "agents:list")
+	id, err := res.LastInsertId()
+	if err == nil && id > 0 {
+		return s.GetAgent(ctx, id)
+	}
+	var agentID int64
+	if err := s.DB.QueryRowContext(ctx, `SELECT id FROM compose_agents WHERE name=?`, req.Name).Scan(&agentID); err != nil {
+		return nil, err
+	}
+	return s.GetAgent(ctx, agentID)
+}
+
+func (s *Store) DeleteAgent(ctx context.Context, id int64) error {
+	res, err := s.DB.ExecContext(ctx, `DELETE FROM compose_agents WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err == nil && affected == 0 {
+		return ErrNotFound
+	}
+	s.DeleteCache(ctx, "agents:list", "schedules:list")
+	return nil
+}
+
+func (s *Store) TouchAgent(ctx context.Context, id int64) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE compose_agents SET last_seen=?, updated_at=? WHERE id=?`, time.Now().UTC(), time.Now().UTC(), id)
+	if err == nil {
+		s.DeleteCache(ctx, "agents:list")
+	}
+	return err
+}
+
+func (s *Store) ListSchedules(ctx context.Context) ([]core.UpdateSchedule, error) {
+	var cached []core.UpdateSchedule
+	if s.GetJSON(ctx, "schedules:list", &cached) {
+		return cached, nil
+	}
+	schedules, err := s.querySchedules(ctx, `SELECT s.id, s.agent_id, COALESCE(a.name, ''), s.project, s.action, s.enabled, s.interval_minutes, s.timeout_seconds, s.next_run_at, s.last_run_at, s.last_job_id, s.last_status, s.last_error, s.created_at, s.updated_at
+		FROM update_schedules s
+		LEFT JOIN compose_agents a ON a.id=s.agent_id
+		ORDER BY s.enabled DESC, s.next_run_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	s.SetJSON(ctx, "schedules:list", schedules, s.CacheTTL)
+	return schedules, nil
+}
+
+func (s *Store) ListDueSchedules(ctx context.Context, now time.Time) ([]core.UpdateSchedule, error) {
+	return s.querySchedules(ctx, `SELECT s.id, s.agent_id, COALESCE(a.name, ''), s.project, s.action, s.enabled, s.interval_minutes, s.timeout_seconds, s.next_run_at, s.last_run_at, s.last_job_id, s.last_status, s.last_error, s.created_at, s.updated_at
+		FROM update_schedules s
+		LEFT JOIN compose_agents a ON a.id=s.agent_id
+		WHERE s.enabled=TRUE AND s.next_run_at <= ?
+		ORDER BY s.next_run_at ASC`, now)
+}
+
+func (s *Store) GetSchedule(ctx context.Context, id int64) (*core.UpdateSchedule, error) {
+	schedules, err := s.querySchedules(ctx, `SELECT s.id, s.agent_id, COALESCE(a.name, ''), s.project, s.action, s.enabled, s.interval_minutes, s.timeout_seconds, s.next_run_at, s.last_run_at, s.last_job_id, s.last_status, s.last_error, s.created_at, s.updated_at
+		FROM update_schedules s
+		LEFT JOIN compose_agents a ON a.id=s.agent_id
+		WHERE s.id=?`, id)
+	if err != nil {
+		return nil, err
+	}
+	if len(schedules) == 0 {
+		return nil, ErrNotFound
+	}
+	return &schedules[0], nil
+}
+
+func (s *Store) SaveSchedule(ctx context.Context, req core.UpdateScheduleRequest) (*core.UpdateSchedule, error) {
+	now := time.Now().UTC()
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	action := req.Action
+	if action == "" {
+		action = "update"
+	}
+	timeout := req.TimeoutSeconds
+	if timeout <= 0 {
+		timeout = 300
+	}
+	nextRun := now.Add(time.Duration(req.IntervalMinutes) * time.Minute)
+	if req.NextRunAt != nil && !req.NextRunAt.IsZero() {
+		nextRun = req.NextRunAt.UTC()
+	}
+	if req.ID > 0 {
+		res, err := s.DB.ExecContext(ctx, `UPDATE update_schedules
+			SET agent_id=?, project=?, action=?, enabled=?, interval_minutes=?, timeout_seconds=?, next_run_at=?, updated_at=?
+			WHERE id=?`,
+			nullableInt64(req.AgentID), req.Project, action, enabled, req.IntervalMinutes, timeout, nextRun, now, req.ID)
+		if err != nil {
+			return nil, err
+		}
+		affected, err := res.RowsAffected()
+		if err == nil && affected == 0 {
+			return nil, ErrNotFound
+		}
+		s.DeleteCache(ctx, "schedules:list")
+		return s.GetSchedule(ctx, req.ID)
+	}
+	res, err := s.DB.ExecContext(ctx, `INSERT INTO update_schedules
+		(agent_id, project, action, enabled, interval_minutes, timeout_seconds, next_run_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		nullableInt64(req.AgentID), req.Project, action, enabled, req.IntervalMinutes, timeout, nextRun, now, now)
+	if err != nil {
+		return nil, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, err
+	}
+	s.DeleteCache(ctx, "schedules:list")
+	return s.GetSchedule(ctx, id)
+}
+
+func (s *Store) DeleteSchedule(ctx context.Context, id int64) error {
+	res, err := s.DB.ExecContext(ctx, `DELETE FROM update_schedules WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err == nil && affected == 0 {
+		return ErrNotFound
+	}
+	s.DeleteCache(ctx, "schedules:list")
+	return nil
+}
+
+func (s *Store) MarkScheduleDispatched(ctx context.Context, id int64, nextRun time.Time, jobID, status, errText string) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE update_schedules
+		SET next_run_at=?, last_run_at=?, last_job_id=?, last_status=?, last_error=?, updated_at=?
+		WHERE id=?`,
+		nextRun.UTC(), time.Now().UTC(), jobID, status, nullableString(errText), time.Now().UTC(), id)
+	if err == nil {
+		s.DeleteCache(ctx, "schedules:list")
+	}
+	return err
+}
+
+func (s *Store) querySchedules(ctx context.Context, query string, args ...interface{}) ([]core.UpdateSchedule, error) {
+	rows, err := s.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	schedules := make([]core.UpdateSchedule, 0)
+	for rows.Next() {
+		schedule, err := scanSchedule(rows)
+		if err != nil {
+			return nil, err
+		}
+		schedules = append(schedules, *schedule)
+	}
+	return schedules, rows.Err()
+}
+
+type agentScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanAgent(scanner agentScanner) (*core.ComposeAgent, error) {
+	var agent core.ComposeAgent
+	var lastSeen sql.NullTime
+	if err := scanner.Scan(&agent.ID, &agent.Name, &agent.BaseURL, &agent.Token, &agent.Enabled, &lastSeen, &agent.CreatedAt, &agent.UpdatedAt); err != nil {
+		return nil, err
+	}
+	if lastSeen.Valid {
+		agent.LastSeen = &lastSeen.Time
+	}
+	return &agent, nil
+}
+
+func scanSchedule(scanner jobScanner) (*core.UpdateSchedule, error) {
+	var schedule core.UpdateSchedule
+	var agentID sql.NullInt64
+	var lastRun sql.NullTime
+	var lastError sql.NullString
+	if err := scanner.Scan(&schedule.ID, &agentID, &schedule.AgentName, &schedule.Project, &schedule.Action, &schedule.Enabled, &schedule.IntervalMinutes, &schedule.TimeoutSeconds, &schedule.NextRunAt, &lastRun, &schedule.LastJobID, &schedule.LastStatus, &lastError, &schedule.CreatedAt, &schedule.UpdatedAt); err != nil {
+		return nil, err
+	}
+	if agentID.Valid {
+		schedule.AgentID = &agentID.Int64
+	}
+	if lastRun.Valid {
+		schedule.LastRunAt = &lastRun.Time
+	}
+	if lastError.Valid {
+		schedule.LastError = lastError.String
+	}
+	return &schedule, nil
 }
 
 func (s *Store) importLegacyUsers(ctx context.Context, path string) error {
@@ -325,6 +608,13 @@ func nullableString(value string) interface{} {
 		return nil
 	}
 	return value
+}
+
+func nullableInt64(value *int64) interface{} {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func (s *Store) ResolveUpdatePolicy(project core.Project) core.ProjectUpdatePolicy {

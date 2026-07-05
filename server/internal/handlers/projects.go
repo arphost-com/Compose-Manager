@@ -41,6 +41,32 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, project)
 }
 
+// Delete removes an inactive compose project directory.
+func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	var req core.DeleteProjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	result, err := h.Engine.DeleteProject(name, req)
+	if err != nil {
+		if _, ok := err.(*core.ErrNotFound); ok {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		status := http.StatusBadRequest
+		if result != nil && !result.Success {
+			writeJSON(w, status, result)
+			return
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	h.Store.DeleteCache(r.Context(), "projects:list")
+	writeJSON(w, http.StatusOK, result)
+}
+
 // List returns all discovered projects.
 func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
 	projects, err := h.discoverProjects(r.Context())
