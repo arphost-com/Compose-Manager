@@ -162,6 +162,28 @@ SERVER_USER=1001:1001
 WEB_PORT=8193
 ```
 
+Environment reference:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `API_KEY` | none | Required legacy/API key used for API access and as the first-admin password fallback when `ADMIN_PASSWORD` is unset. Use a long random value. |
+| `ADMIN_USERNAME` | `admin` | Username created only when the MariaDB users table is empty. |
+| `ADMIN_PASSWORD` | empty | Optional first-admin password. If empty, the app uses `API_KEY` for initial bootstrap login. Rotate it after first login. |
+| `DB_NAME` | `compose_manager` | MariaDB database name for users, action history, project settings, and update policies. |
+| `DB_USER` | `compose_manager` | MariaDB application user. |
+| `DB_PASSWORD` | none | Required password for the MariaDB application user. |
+| `DB_ROOT_PASSWORD` | none | Required MariaDB root password used by the MariaDB container during initialization. |
+| `REDIS_PASSWORD` | none | Required password for Redis sessions and cache. |
+| `REDIS_DB` | `0` | Redis logical database number. `0` means the first/default Redis DB. Keep `0` for the bundled dedicated Redis container; use another index only if intentionally sharing a Redis server with other apps. |
+| `CACHE_TTL_SECONDS` | `15` | Time, in seconds, that project/image/job/settings reads may stay in Redis before refresh. Lower values show changes faster; higher values reduce Docker/API load. |
+| `DOCKER_ROOT` | `/home/debian/docker` | Host directory containing the Docker Compose projects that Compose Manager should discover and manage. Mounted into the server container at `/docker`. |
+| `STATE_DIR` | `/home/debian/.compose-manager` | Host directory for Compose Manager persistent state. This should live under the service user's home directory, not under the managed Docker root. |
+| `DOCKER_GID` | host Docker socket group | Group ID for `/var/run/docker.sock`. The non-root server user is added to this group so it can run Docker commands. |
+| `SERVER_USER` | `1001:1001` | UID:GID used to run the server container. Set `0:0` only on hosts that intentionally require root compose management. |
+| `WEB_PORT` | `8193` | Host port for the web dashboard. The API server stays internal on port `8192`. |
+
+`REDIS_DB` is not a MariaDB setting and does not create another Redis container. Redis has numbered logical databases inside one Redis instance; `0` is the normal default. Compose Manager stores login sessions and short-lived cache keys there. With the included dedicated Redis service, leave it at `0`.
+
 Start it:
 
 ```bash
@@ -209,6 +231,7 @@ The GitLab pipeline treats docker02 as the dev environment:
 - The deploy job preserves existing docker02 `.env` secrets or generates secure first-run values when GitLab CI variables are not set.
 - `smoke:docker02` runs automatically after the dev deploy.
 - `push:github` is an optional manual production-style job that pushes the tested default branch to `arphost-com/Compose-Manager` with the masked `GITHUB_PAT` CI variable.
+- If `push:github` is clicked before `GITHUB_PAT` is configured, the job exits successfully with a message and does not push.
 
 ---
 

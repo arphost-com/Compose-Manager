@@ -282,5 +282,10 @@ push:github:
       allow_failure: true
     - when: never
   script:
-    - test -n "${GITHUB_PAT:?Set GITHUB_PAT as a masked GitLab CI/CD variable}"
+    - |
+      if [ -z "${GITHUB_PAT:-}" ]; then
+        echo "GITHUB_PAT is not set. Configure it as a masked GitLab CI/CD variable, then retry this manual job."
+        echo "No GitHub push was performed."
+        exit 0
+      fi
     - git push "https://x-access-token:${GITHUB_PAT}@github.com/arphost-com/Compose-Manager.git" "HEAD:main"

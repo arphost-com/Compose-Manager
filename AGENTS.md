@@ -185,6 +185,7 @@ Runtime state:
 - `COMPOSE_MANAGER_API_KEY`, `COMPOSE_MANAGER_DB_PASSWORD`, `COMPOSE_MANAGER_DB_ROOT_PASSWORD`, and `COMPOSE_MANAGER_REDIS_PASSWORD` are optional for docker02 dev. If unset, the deploy job preserves existing `.env` values or generates secure first-run values.
 - `smoke:docker02` runs automatically after dev deploy and reads the deployed API key from `/home/debian/docker/compose-manager/.env`.
 - `push:github` is the optional manual production-style job. It pushes the tested default branch to `arphost-com/Compose-Manager` using masked `GITHUB_PAT` without blocking the green docker02 dev pipeline.
+- If `push:github` is run without `GITHUB_PAT`, it exits successfully with a clear message and does not push.
 
 ## Security Guardrails
 
@@ -201,27 +202,29 @@ Runtime state:
 
 Server env vars:
 
-| Variable | Default | Required |
-| --- | --- | --- |
-| `API_KEY` | none | yes |
-| `ADMIN_USERNAME` | `admin` | no |
-| `ADMIN_PASSWORD` | API key bootstrap fallback | no |
-| `DATABASE_DSN` | derived from DB vars | no |
-| `DB_HOST` | none | yes if `DATABASE_DSN` unset |
-| `DB_PORT` | `3306` | no |
-| `DB_NAME` | none | yes if `DATABASE_DSN` unset |
-| `DB_USER` | none | yes if `DATABASE_DSN` unset |
-| `DB_PASSWORD` | none | yes if `DATABASE_DSN` unset |
-| `REDIS_ADDR` | `redis:6379` | no |
-| `REDIS_PASSWORD` | none | yes |
-| `REDIS_DB` | `0` | no |
-| `CACHE_TTL_SECONDS` | `15` | no |
-| `ROOT` | `/docker` | no |
-| `STATE_DIR` | `$HOME/.compose-manager` | no |
-| `PORT` | `8192` | no |
-| `HOOKS_DIR` | `<STATE_DIR>/hooks` | no |
-| `BACKUP_DIR` | `<STATE_DIR>/backups` | no |
-| `DOCKER_CONFIG` | Docker default | no |
+| Variable | Default | Required | Purpose |
+| --- | --- | --- | --- |
+| `API_KEY` | none | yes | Legacy/API key and first-admin password fallback when `ADMIN_PASSWORD` is unset. |
+| `ADMIN_USERNAME` | `admin` | no | First admin username when the MariaDB users table is empty. |
+| `ADMIN_PASSWORD` | API key bootstrap fallback | no | Optional first admin password. Rotate or replace it after first login. |
+| `DATABASE_DSN` | derived from DB vars | no | Full MariaDB DSN override. Usually leave unset in Compose. |
+| `DB_HOST` | none | yes if `DATABASE_DSN` unset | MariaDB host, normally `mariadb` in Compose. |
+| `DB_PORT` | `3306` | no | MariaDB port. |
+| `DB_NAME` | none | yes if `DATABASE_DSN` unset | MariaDB database for users, jobs, project settings, and update policies. |
+| `DB_USER` | none | yes if `DATABASE_DSN` unset | MariaDB application user. |
+| `DB_PASSWORD` | none | yes if `DATABASE_DSN` unset | MariaDB application password. |
+| `REDIS_ADDR` | `redis:6379` | no | Redis host and port, normally the bundled Redis service. |
+| `REDIS_PASSWORD` | none | yes | Redis password for sessions and cache. |
+| `REDIS_DB` | `0` | no | Redis logical database index. `0` is the first/default Redis DB; keep it for the bundled dedicated Redis service. |
+| `CACHE_TTL_SECONDS` | `15` | no | Redis cache TTL for project/image/job/settings reads. Lower values refresh faster; higher values reduce Docker/API load. |
+| `ROOT` | `/docker` | no | In-container path where managed Compose projects are mounted. |
+| `STATE_DIR` | `$HOME/.compose-manager` | no | Host state directory before container mount; in Compose the server uses `/state` inside the container. |
+| `PORT` | `8192` | no | API server listen port. |
+| `HOOKS_DIR` | `<STATE_DIR>/hooks` | no | Directory for API update hooks. |
+| `BACKUP_DIR` | `<STATE_DIR>/backups` | no | Directory for backups and database dumps. |
+| `DOCKER_CONFIG` | Docker default | no | Docker CLI config path for registry logins. |
+
+`REDIS_DB=0` is not related to MariaDB. It selects Redis logical database 0 inside one Redis instance. Use another number only if intentionally sharing a Redis server and you need Compose Manager keys isolated from other apps.
 
 If the MariaDB `users` table is empty, the server creates the first admin from `ADMIN_USERNAME` and `ADMIN_PASSWORD`. If `ADMIN_PASSWORD` is empty, it uses `API_KEY` as the bootstrap password. Rotate or add users from the Settings page after first login.
 
