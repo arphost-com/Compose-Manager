@@ -143,7 +143,8 @@ Important files:
 UI expectations:
 
 - Keep controls practical and dense; this is an operations tool.
-- Use native `title` tooltips or an existing local tooltip pattern for operational controls.
+- Every form input needs a native `title` tooltip. In `web/src/pages/Settings.jsx` use the `Field` helper (which propagates `title` to the whole label and supports an optional `hint` for inline help under the input).
+- When a client-side serializer converts free-form input to structured JSON (e.g. `default-address-pools`), throw on malformed input with a specific per-line message. Never silently drop fields — Docker Settings previously ate `default-address-pools` when a line missed its `,size` because the mapper filtered failed parses.
 - Show destructive actions distinctly.
 - Avoid adding marketing/landing-page content.
 

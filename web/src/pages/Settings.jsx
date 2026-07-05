@@ -91,6 +91,7 @@ export default function Settings() {
   const [scheduleForm, setScheduleForm] = useState(emptyScheduleForm);
   const [agentForm, setAgentForm] = useState(emptyAgentForm);
   const [registryForm, setRegistryForm] = useState({ registry: '', username: '', password: '' });
+  const [dockerHubForm, setDockerHubForm] = useState({ username: '', password: '' });
   const [dockerForm, setDockerForm] = useState(emptyDockerForm);
   const [dockerRaw, setDockerRaw] = useState('{}\n');
   const [dockerStatus, setDockerStatus] = useState(null);
@@ -105,7 +106,7 @@ export default function Settings() {
       { key: 'users', label: 'Users', title: 'Manage dashboard users and passwords.' },
       { key: 'agents', label: 'Agents', title: 'Register and edit remote Compose Manager agents.' },
       { key: 'schedules', label: 'Scheduled Updates', title: 'Schedule local or agent project updates.' },
-      { key: 'registries', label: 'Private Registry Login', title: 'Login Docker to private registries.' },
+      { key: 'registries', label: 'Registry Logins', title: 'Docker Hub account and private registry logins.' },
       { key: 'docker', label: 'Docker Settings', title: 'Edit Docker daemon.json settings for this host.' },
       { key: 'backups', label: 'Backup Endpoints', title: 'Configure local and remote backup destinations.' },
     ];
@@ -305,6 +306,17 @@ export default function Settings() {
     }
   };
 
+  const loginDockerHub = async (event) => {
+    event.preventDefault();
+    try {
+      await registries.login({ registry: '', username: dockerHubForm.username, password: dockerHubForm.password });
+      showMessage(`Logged in to Docker Hub as ${dockerHubForm.username}`);
+      setDockerHubForm({ username: dockerHubForm.username, password: '' });
+    } catch (err) {
+      showError(err);
+    }
+  };
+
   const loadDockerSettings = async () => {
     try {
       const res = await dockerSettings.daemon();
@@ -475,8 +487,8 @@ export default function Settings() {
             </form>
             <form onSubmit={resetPassword} className="section-panel space-y-3">
               <h2 className="text-lg font-semibold text-gray-950">Reset Password</h2>
-              <input className="input" placeholder="username" value={resetForm.username} onChange={e => setResetForm({ ...resetForm, username: e.target.value })} required />
-              <input className="input" type="password" placeholder="new password, 12+ chars" value={resetForm.password} onChange={e => setResetForm({ ...resetForm, password: e.target.value })} required />
+              <input className="input" placeholder="username" value={resetForm.username} onChange={e => setResetForm({ ...resetForm, username: e.target.value })} required title="Existing dashboard username to reset." />
+              <input className="input" type="password" placeholder="new password, 12+ chars" value={resetForm.password} onChange={e => setResetForm({ ...resetForm, password: e.target.value })} required title="New password. Minimum length is enforced by the server." />
               <button className="btn-secondary w-full">Update Password</button>
             </form>
           </div>
@@ -620,22 +632,38 @@ export default function Settings() {
       )}
 
       {admin && activeTab === 'registries' && (
-        <form onSubmit={loginRegistry} className="section-panel space-y-3">
-          <h2 className="text-lg font-semibold text-gray-950">Private Registry Login</h2>
-          <p className="text-sm text-gray-600">This runs Docker login on the main server so private image pulls and updates can use saved Docker credentials.</p>
-          <div className="grid gap-3 md:grid-cols-3">
-            <Field label="Registry" title="Docker registry host only, such as registry.gitlab.com. Leave blank for Docker Hub.">
-              <input value={registryForm.registry} onChange={e => setRegistryForm({ ...registryForm, registry: e.target.value })} className="input" placeholder="registry.gitlab.com" />
-            </Field>
-            <Field label="Username" title="Registry username or deploy token username.">
-              <input required value={registryForm.username} onChange={e => setRegistryForm({ ...registryForm, username: e.target.value })} className="input" />
-            </Field>
-            <Field label="Token or password" title="Sent to docker login via password-stdin. It is not stored by the web app after submission.">
-              <input required type="password" value={registryForm.password} onChange={e => setRegistryForm({ ...registryForm, password: e.target.value })} className="input" />
-            </Field>
-          </div>
-          <button type="submit" className="btn-primary">Login Registry</button>
-        </form>
+        <div className="space-y-4">
+          <form onSubmit={loginDockerHub} className="section-panel space-y-3">
+            <h2 className="text-lg font-semibold text-gray-950">Docker Hub Account</h2>
+            <p className="text-sm text-gray-600">Authenticated Docker Hub pulls raise this host's rate limit from 100 to 200 pulls per 6 hours and are required for private Docker Hub repos. Use a Docker Hub personal access token when possible.</p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="Docker Hub username" title="Docker Hub account username.">
+                <input required autoComplete="username" value={dockerHubForm.username} onChange={e => setDockerHubForm({ ...dockerHubForm, username: e.target.value })} className="input" placeholder="dockerhub-username" />
+              </Field>
+              <Field label="Password or access token" title="Sent to docker login via password-stdin. Not stored by the web app after submission. Prefer a Docker Hub PAT over an account password.">
+                <input required type="password" autoComplete="new-password" value={dockerHubForm.password} onChange={e => setDockerHubForm({ ...dockerHubForm, password: e.target.value })} className="input" />
+              </Field>
+            </div>
+            <button type="submit" className="btn-primary">Login to Docker Hub</button>
+          </form>
+
+          <form onSubmit={loginRegistry} className="section-panel space-y-3">
+            <h2 className="text-lg font-semibold text-gray-950">Private Registry Login</h2>
+            <p className="text-sm text-gray-600">Login Docker to a non-Docker-Hub registry such as GitLab, GHCR, or a self-hosted registry.</p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <Field label="Registry" title="Docker registry host only, such as registry.gitlab.com. Leave blank for Docker Hub — but prefer the Docker Hub Account panel above for Docker Hub logins.">
+                <input required value={registryForm.registry} onChange={e => setRegistryForm({ ...registryForm, registry: e.target.value })} className="input" placeholder="registry.gitlab.com" />
+              </Field>
+              <Field label="Username" title="Registry username or deploy token username.">
+                <input required value={registryForm.username} onChange={e => setRegistryForm({ ...registryForm, username: e.target.value })} className="input" />
+              </Field>
+              <Field label="Token or password" title="Sent to docker login via password-stdin. It is not stored by the web app after submission.">
+                <input required type="password" value={registryForm.password} onChange={e => setRegistryForm({ ...registryForm, password: e.target.value })} className="input" />
+              </Field>
+            </div>
+            <button type="submit" className="btn-primary">Login Registry</button>
+          </form>
+        </div>
       )}
 
       {admin && activeTab === 'docker' && (
@@ -669,7 +697,7 @@ export default function Settings() {
                 <Field label="Fixed CIDR v6" title="IPv6 subnet Docker should use for container addresses, for example fd00:dead:beef::/48. Leave blank unless IPv6 is configured on the host.">
                   <input className="input" value={dockerForm.fixed_cidr_v6} onChange={e => setDockerForm({ ...dockerForm, fixed_cidr_v6: e.target.value })} placeholder="fd00:dead:beef::/48" />
                 </Field>
-                <Field label="Default address pools" title="One pool per line as base,size, for example 172.30.0.0/16,24. Controls Docker-created bridge network subnets and helps avoid VPN/LAN overlaps.">
+                <Field label="Default address pools" title="One pool per line as base,size, for example 172.30.0.0/16,24. Controls Docker-created bridge network subnets and helps avoid VPN/LAN overlaps." hint="Format: base,size per line — e.g. 172.30.0.0/16,24 gives 256 /24 subnets. Both parts are required. Save fails clearly if any line is malformed.">
                   <textarea className="textarea h-24 font-mono" value={dockerForm.default_address_pools} onChange={e => setDockerForm({ ...dockerForm, default_address_pools: e.target.value })} placeholder="172.30.0.0/16,24&#10;172.31.0.0/16,24" />
                 </Field>
               </div>
@@ -691,17 +719,17 @@ export default function Settings() {
                     <input className="input" value={dockerForm.log_max_file} onChange={e => setDockerForm({ ...dockerForm, log_max_file: e.target.value })} />
                   </Field>
                 </div>
-                <Field label="DNS servers" title="One DNS server per line. These become Docker daemon defaults for new containers.">
+                <Field label="DNS servers" title="One DNS server per line. These become Docker daemon defaults for new containers." hint="One IP per line. Applied to new containers only; existing containers keep their current resolvers.">
                   <textarea className="textarea h-20 font-mono" value={dockerForm.dns} onChange={e => setDockerForm({ ...dockerForm, dns: e.target.value })} placeholder="1.1.1.1&#10;8.8.8.8" />
                 </Field>
               </div>
 
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase text-gray-500">Registries</h3>
-                <Field label="Registry mirrors" title="One mirror URL per line. Mirrors can reduce Docker Hub rate limits and speed up pulls. Use trusted HTTPS mirrors.">
+                <Field label="Registry mirrors" title="One mirror URL per line. Mirrors can reduce Docker Hub rate limits and speed up pulls. Use trusted HTTPS mirrors." hint="One HTTPS URL per line. Useful for Docker Hub caching mirrors when rate limits are a concern.">
                   <textarea className="textarea h-24 font-mono" value={dockerForm.registry_mirrors} onChange={e => setDockerForm({ ...dockerForm, registry_mirrors: e.target.value })} placeholder="https://mirror.example.com" />
                 </Field>
-                <Field label="Insecure registries" title="One host[:port] or CIDR per line. Docker skips TLS verification for these registries. Use only on trusted private networks.">
+                <Field label="Insecure registries" title="One host[:port] or CIDR per line. Docker skips TLS verification for these registries. Use only on trusted private networks." hint="One host[:port] or CIDR per line. Only for trusted internal registries.">
                   <textarea className="textarea h-24 font-mono" value={dockerForm.insecure_registries} onChange={e => setDockerForm({ ...dockerForm, insecure_registries: e.target.value })} placeholder="registry.local:5000" />
                 </Field>
               </div>
@@ -825,11 +853,12 @@ export default function Settings() {
   );
 }
 
-function Field({ label, title, children }) {
+function Field({ label, title, hint, children }) {
   return (
-    <label className="block text-sm">
-      <span className="mb-1 block font-medium text-gray-700" title={title}>{label}</span>
+    <label className="block text-sm" title={title}>
+      <span className="mb-1 block font-medium text-gray-700">{label}</span>
       {children}
+      {hint && <span className="mt-1 block text-xs text-gray-500">{hint}</span>}
     </label>
   );
 }
@@ -935,10 +964,28 @@ function poolsToLines(value) {
 }
 
 function linesToPools(value) {
-  return linesToArray(value).map(line => {
-    const [base, size] = line.split(',').map(part => part.trim());
-    return { base, size: Number(size) };
-  }).filter(pool => pool.base && Number.isFinite(pool.size) && pool.size > 0);
+  const lines = linesToArray(value);
+  return lines.map((line, index) => {
+    const parts = line.split(',').map(part => part.trim());
+    const base = parts[0] || '';
+    const sizeText = parts[1] || '';
+    if (!base) throw new Error(`Default address pool line ${index + 1} is empty.`);
+    if (!/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(base)) {
+      throw new Error(`Default address pool line ${index + 1}: base must be a CIDR like 172.30.0.0/16 (got "${base}").`);
+    }
+    if (!sizeText) {
+      throw new Error(`Default address pool line ${index + 1}: missing size after the comma. Example: ${base},24`);
+    }
+    const size = Number(sizeText);
+    if (!Number.isInteger(size) || size < 1 || size > 32) {
+      throw new Error(`Default address pool line ${index + 1}: size must be an integer 1-32 (got "${sizeText}").`);
+    }
+    const baseMask = Number(base.split('/')[1]);
+    if (size < baseMask) {
+      throw new Error(`Default address pool line ${index + 1}: subnet size /${size} must be greater than or equal to the base mask /${baseMask}.`);
+    }
+    return { base, size };
+  });
 }
 
 function pruneMap(value) {
