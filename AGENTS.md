@@ -181,10 +181,10 @@ Runtime state:
 - Validation runs `bash -n` and `docker compose config` with CI placeholder values.
 - Tests run Go and web builds inside Docker containers so the shell runner does not need local Go or Node.
 - Security jobs expect ARPHost runner tools on `PATH`: `semgrep`, `trivy`, `gitleaks`, `trufflehog`, and `dependency-check`.
-- `deploy:docker02` is manual-only. It syncs the repo to `/home/debian/docker/compose-manager`, writes `.env` from CI variables, and runs Compose as the `debian` user.
-- `COMPOSE_MANAGER_API_KEY` must be set as a masked GitLab CI/CD variable.
-- `COMPOSE_MANAGER_DB_PASSWORD`, `COMPOSE_MANAGER_DB_ROOT_PASSWORD`, and `COMPOSE_MANAGER_REDIS_PASSWORD` must be set as masked GitLab CI/CD variables.
-- `smoke:docker02` runs after a completed manual deploy.
+- `deploy:docker02` is the automatic dev deployment for the default branch. It syncs the repo to `/home/debian/docker/compose-manager`, writes `.env`, and runs Compose as the `debian` user.
+- `COMPOSE_MANAGER_API_KEY`, `COMPOSE_MANAGER_DB_PASSWORD`, `COMPOSE_MANAGER_DB_ROOT_PASSWORD`, and `COMPOSE_MANAGER_REDIS_PASSWORD` are optional for docker02 dev. If unset, the deploy job preserves existing `.env` values or generates secure first-run values.
+- `smoke:docker02` runs automatically after dev deploy and reads the deployed API key from `/home/debian/docker/compose-manager/.env`.
+- `push:github` is the manual production-style job. It pushes the tested default branch to `arphost-com/Compose-Manager` using masked `GITHUB_PAT`.
 
 ## Security Guardrails
 

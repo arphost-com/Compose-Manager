@@ -14,3 +14,5 @@ USER 101
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/ || exit 1
+ENTRYPOINT []
+CMD ["nginx", "-g", "daemon off;"]

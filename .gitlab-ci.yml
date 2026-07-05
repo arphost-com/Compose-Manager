@@ -5,6 +5,7 @@ stages:
   - security
   - deploy
   - smoke
+  - production
 
 variables:
   DEPLOY_USER: "debian"
@@ -184,17 +185,14 @@ deploy:docker02:
     - security:dependency_check
     - security:image_scan
   rules:
-    - when: manual
-      allow_failure: false
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: on_success
+    - when: never
   resource_group: docker02-compose-manager
   environment:
-    name: docker02
+    name: docker02-dev
     url: "http://docker02:${WEB_PORT}"
   script:
-    - test -n "${COMPOSE_MANAGER_API_KEY:?Set COMPOSE_MANAGER_API_KEY as a masked GitLab CI/CD variable}"
-    - test -n "${COMPOSE_MANAGER_DB_PASSWORD:?Set COMPOSE_MANAGER_DB_PASSWORD as a masked GitLab CI/CD variable}"
-    - test -n "${COMPOSE_MANAGER_DB_ROOT_PASSWORD:?Set COMPOSE_MANAGER_DB_ROOT_PASSWORD as a masked GitLab CI/CD variable}"
-    - test -n "${COMPOSE_MANAGER_REDIS_PASSWORD:?Set COMPOSE_MANAGER_REDIS_PASSWORD as a masked GitLab CI/CD variable}"
     - export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
     - export SERVICE_UID="$(id -u "${DEPLOY_USER}")"
     - export SERVICE_GID="$(id -g "${DEPLOY_USER}")"
@@ -204,10 +202,57 @@ deploy:docker02:
     - sudo -n find "${STATE_DIR}" -type d -exec chmod 2770 {} +
     - sudo -n find "${STATE_DIR}" -type f -exec chmod 660 {} +
     - sudo -n rsync -a --delete --chown="${DEPLOY_USER}:${DEPLOY_USER}" --exclude='.git/' --exclude='.claude/' --exclude='.env' --exclude='bin/' --exclude='node_modules/' --exclude='web/dist/' --exclude='tmp/' ./ "${DEPLOY_PATH}/"
-    - umask 077
-    - printf '%s\n' "API_KEY=${COMPOSE_MANAGER_API_KEY}" "DB_PASSWORD=${COMPOSE_MANAGER_DB_PASSWORD}" "DB_ROOT_PASSWORD=${COMPOSE_MANAGER_DB_ROOT_PASSWORD}" "REDIS_PASSWORD=${COMPOSE_MANAGER_REDIS_PASSWORD}" "DOCKER_ROOT=${DOCKER_ROOT}" "STATE_DIR=${STATE_DIR}" "WEB_PORT=${WEB_PORT}" "DOCKER_GID=${DOCKER_GID}" "SERVER_USER=${SERVER_USER}" > "${CI_PROJECT_DIR}/compose-manager.env"
-    - sudo -n install -m 600 -o "${DEPLOY_USER}" -g "${DEPLOY_USER}" "${CI_PROJECT_DIR}/compose-manager.env" "${DEPLOY_PATH}/.env"
-    - rm -f "${CI_PROJECT_DIR}/compose-manager.env"
+    - |
+      sudo -n -u "${DEPLOY_USER}" env \
+        DEPLOY_PATH="${DEPLOY_PATH}" \
+        DOCKER_ROOT="${DOCKER_ROOT}" \
+        STATE_DIR="${STATE_DIR}" \
+        WEB_PORT="${WEB_PORT}" \
+        DOCKER_GID="${DOCKER_GID}" \
+        SERVER_USER="${SERVER_USER}" \
+        COMPOSE_MANAGER_API_KEY="${COMPOSE_MANAGER_API_KEY:-}" \
+        COMPOSE_MANAGER_DB_PASSWORD="${COMPOSE_MANAGER_DB_PASSWORD:-}" \
+        COMPOSE_MANAGER_DB_ROOT_PASSWORD="${COMPOSE_MANAGER_DB_ROOT_PASSWORD:-}" \
+        COMPOSE_MANAGER_REDIS_PASSWORD="${COMPOSE_MANAGER_REDIS_PASSWORD:-}" \
+        sh <<'SH'
+      set -eu
+      env_file="${DEPLOY_PATH}/.env"
+      get_env() {
+        if [ -f "${env_file}" ]; then
+          awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "${env_file}"
+        fi
+      }
+      gen_secret() {
+        if command -v openssl >/dev/null 2>&1; then
+          openssl rand -hex 32
+        else
+          head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 48
+        fi
+      }
+      api_key="${COMPOSE_MANAGER_API_KEY:-$(get_env API_KEY || true)}"
+      db_password="${COMPOSE_MANAGER_DB_PASSWORD:-$(get_env DB_PASSWORD || true)}"
+      db_root_password="${COMPOSE_MANAGER_DB_ROOT_PASSWORD:-$(get_env DB_ROOT_PASSWORD || true)}"
+      redis_password="${COMPOSE_MANAGER_REDIS_PASSWORD:-$(get_env REDIS_PASSWORD || true)}"
+      [ -n "${api_key}" ] || api_key="$(gen_secret)"
+      [ -n "${db_password}" ] || db_password="$(gen_secret)"
+      [ -n "${db_root_password}" ] || db_root_password="$(gen_secret)"
+      [ -n "${redis_password}" ] || redis_password="$(gen_secret)"
+      umask 077
+      tmp="$(mktemp)"
+      printf '%s\n' \
+        "API_KEY=${api_key}" \
+        "DB_PASSWORD=${db_password}" \
+        "DB_ROOT_PASSWORD=${db_root_password}" \
+        "REDIS_PASSWORD=${redis_password}" \
+        "DOCKER_ROOT=${DOCKER_ROOT}" \
+        "STATE_DIR=${STATE_DIR}" \
+        "WEB_PORT=${WEB_PORT}" \
+        "DOCKER_GID=${DOCKER_GID}" \
+        "SERVER_USER=${SERVER_USER}" \
+        > "${tmp}"
+      install -m 600 "${tmp}" "${env_file}"
+      rm -f "${tmp}"
+      SH
     - sudo -n -u "${DEPLOY_USER}" docker compose --project-directory "${DEPLOY_PATH}" --env-file "${DEPLOY_PATH}/.env" -f "${DEPLOY_PATH}/docker-compose.yml" up -d --build --remove-orphans
 
 smoke:docker02:
@@ -217,12 +262,25 @@ smoke:docker02:
   rules:
     - when: on_success
   script:
-    - test -n "${COMPOSE_MANAGER_API_KEY:?Set COMPOSE_MANAGER_API_KEY as a masked GitLab CI/CD variable}"
+    - export SMOKE_API_KEY="$(sudo -n -u "${DEPLOY_USER}" awk -F= '$1 == "API_KEY" { sub(/^[^=]*=/, ""); print; exit }' "${DEPLOY_PATH}/.env")"
     - sudo -n -u "${DEPLOY_USER}" docker compose --project-directory "${DEPLOY_PATH}" --env-file "${DEPLOY_PATH}/.env" -f "${DEPLOY_PATH}/docker-compose.yml" ps
     - curl -fsS "http://127.0.0.1:${WEB_PORT}/health"
     - |
       curl -fsS \
-        -H "X-API-Key: ${COMPOSE_MANAGER_API_KEY}" \
+        -H "X-API-Key: ${SMOKE_API_KEY}" \
         "http://127.0.0.1:${WEB_PORT}/api/v1/projects" \
         >/tmp/compose-manager-projects.json
     - sudo -n find "${DEPLOY_PATH}" "${STATE_DIR}" -maxdepth 2 -printf '%M %u:%g %p\n'
+
+push:github:
+  stage: production
+  needs:
+    - smoke:docker02
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+      allow_failure: false
+    - when: never
+  script:
+    - test -n "${GITHUB_PAT:?Set GITHUB_PAT as a masked GitLab CI/CD variable}"
+    - git push "https://x-access-token:${GITHUB_PAT}@github.com/arphost-com/Compose-Manager.git" "HEAD:main"
