@@ -289,6 +289,13 @@ push:github:
       if [ -z "${GITHUB_PAT:-}" ]; then
         echo "GITHUB_PAT is not set. Configure it as a masked GitLab CI/CD variable, then retry this manual job."
         echo "No GitHub push was performed."
-        exit 0
+        exit 1
       fi
     - git push "https://x-access-token:${GITHUB_PAT}@github.com/arphost-com/Compose-Manager.git" "HEAD:main"
+    - |
+      github_sha="$(git ls-remote https://github.com/arphost-com/Compose-Manager.git refs/heads/main | awk '{print $1}')"
+      if [ "${github_sha}" != "${CI_COMMIT_SHA}" ]; then
+        echo "GitHub main is ${github_sha}, expected ${CI_COMMIT_SHA}."
+        exit 1
+      fi
+      echo "GitHub main updated to ${github_sha}."

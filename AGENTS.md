@@ -189,7 +189,8 @@ Runtime state:
 - `COMPOSE_MANAGER_API_KEY`, `COMPOSE_MANAGER_DB_PASSWORD`, `COMPOSE_MANAGER_DB_ROOT_PASSWORD`, and `COMPOSE_MANAGER_REDIS_PASSWORD` are optional for docker02 dev. If unset, the deploy job preserves existing `.env` values or generates secure first-run values.
 - `smoke:docker02` runs automatically after dev deploy and reads the deployed API key from `/home/debian/docker/compose-manager/.env`.
 - `push:github` is the optional manual production-style job. It pushes the tested default branch to `arphost-com/Compose-Manager` using masked `GITHUB_PAT` without blocking the green docker02 dev pipeline.
-- If `push:github` is run without `GITHUB_PAT`, it exits successfully with a clear message and does not push.
+- If `push:github` is run without `GITHUB_PAT`, it fails with a clear message and does not push.
+- After pushing, `push:github` verifies that GitHub `main` matches the GitLab commit SHA.
 
 ## Security Guardrails
 
