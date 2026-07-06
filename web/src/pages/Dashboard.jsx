@@ -1278,23 +1278,71 @@ function Badge({ tone = 'gray', children }) {
 }
 
 function ActionResult({ result, onDismiss }) {
-  const tone = result.status === 'running' ? 'border-blue-200 bg-blue-50 text-blue-900' :
-    result.status === 'error' ? 'border-red-200 bg-red-50 text-red-900' :
-    'border-green-200 bg-green-50 text-green-900';
+  const tone = result.status === 'running' ? 'border-blue-300 bg-blue-50 text-blue-900' :
+    result.status === 'error' ? 'border-red-300 bg-red-50 text-red-900' :
+    'border-green-300 bg-green-50 text-green-900';
+  const icon = result.status === 'running' ? <span className="spinner" aria-hidden="true"></span>
+    : result.status === 'error' ? <span aria-hidden="true">✖</span>
+    : <span aria-hidden="true">✓</span>;
+  // Bulk actions return { results:[{project, action, success, output, exit_code}], total, success, failed }
+  const bulk = result.result && Array.isArray(result.result.results) ? result.result : null;
+  const failedProjects = bulk ? bulk.results.filter(r => !r.success) : [];
+  const succeededProjects = bulk ? bulk.results.filter(r => r.success) : [];
+  const [showFailed, setShowFailed] = useState(true);
+  const [showSucceeded, setShowSucceeded] = useState(false);
   return (
-    <div className={`rounded border px-4 py-3 text-sm ${tone}`}>
+    <div className={`sticky top-2 z-30 rounded-md border-2 px-4 py-3 text-sm shadow-lg ${tone}`}>
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="font-medium">{result.status === 'running' ? `Running ${result.label}...` : result.status === 'error' ? `Error during ${result.label}` : `${result.label} completed`}</div>
-          {result.error && <div className="mt-1">{result.error}</div>}
-          {result.job && <div className="mt-1 text-xs">Session: <span className="font-mono">{result.job.id}</span> · {result.job.status}</div>}
-          {(result.job?.output || result.result?.output) && (
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-base font-semibold">
+            {icon}
+            <span>
+              {result.status === 'running' ? `Running ${result.label}…`
+                : result.status === 'error' ? `Error during ${result.label}`
+                : bulk ? `${result.label}: ${bulk.success} succeeded, ${bulk.failed} failed (of ${bulk.total})`
+                : `${result.label} completed`}
+            </span>
+          </div>
+          {result.error && <div className="mt-1 font-mono text-xs">{result.error}</div>}
+          {result.job && <div className="mt-1 text-xs">Session: <span className="font-mono">{result.job.id}</span> · {result.job.status}{typeof result.job.exit_code === 'number' && ` · exit ${result.job.exit_code}`}</div>}
+          {bulk && failedProjects.length > 0 && (
+            <div className="mt-2">
+              <button type="button" onClick={() => setShowFailed(!showFailed)} className="text-xs font-medium underline" title="Toggle failed project details.">
+                {showFailed ? 'Hide' : 'Show'} {failedProjects.length} failure{failedProjects.length === 1 ? '' : 's'}
+              </button>
+              {showFailed && (
+                <ul className="mt-1 space-y-2">
+                  {failedProjects.map((r, i) => (
+                    <li key={`f${i}`} className="rounded bg-red-100/60 p-2">
+                      <div className="font-mono text-xs font-semibold">{r.project} — {r.action} (exit {r.exit_code ?? '?'})</div>
+                      {r.output && <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-gray-950 p-2 font-mono text-[11px] text-gray-100">{r.output}</pre>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          {bulk && succeededProjects.length > 0 && (
+            <div className="mt-2">
+              <button type="button" onClick={() => setShowSucceeded(!showSucceeded)} className="text-xs font-medium underline" title="Toggle succeeded project details.">
+                {showSucceeded ? 'Hide' : 'Show'} {succeededProjects.length} success{succeededProjects.length === 1 ? '' : 'es'}
+              </button>
+              {showSucceeded && (
+                <ul className="mt-1 flex flex-wrap gap-1">
+                  {succeededProjects.map((r, i) => (
+                    <li key={`s${i}`} className="rounded bg-green-100/60 px-2 py-0.5 font-mono text-xs">{r.project}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          {!bulk && (result.job?.output || result.result?.output) && (
             <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded bg-gray-950 p-3 font-mono text-xs text-gray-100">
               {result.job?.output || result.result?.output}
             </pre>
           )}
         </div>
-        <button title="Dismiss this message." onClick={onDismiss} className="text-sm underline">dismiss</button>
+        <button title="Dismiss this message." onClick={onDismiss} className="mini-button">Dismiss</button>
       </div>
     </div>
   );
