@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	cmauth "github.com/arphost-com/Stack-Manager/server/internal/auth"
@@ -20,11 +21,18 @@ func RequireAPIKey(apiKey string) func(http.Handler) http.Handler {
 }
 
 // RequireAuth validates either a bearer session token or the legacy X-API-Key.
+// EventSource in the browser can not set custom request headers, so this
+// middleware also honours ?token= and ?api_key= query parameters as a
+// fallback specifically for streaming endpoints. Query auth is still bound
+// to HTTPS, so it is no weaker than the header equivalents.
 func RequireAuth(apiKey string, sessions *cmauth.SessionManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if sessions != nil {
 				token := cmauth.BearerToken(r)
+				if token == "" {
+					token = strings.TrimSpace(r.URL.Query().Get("token"))
+				}
 				if token != "" {
 					session, ok := sessions.Get(token)
 					if !ok {
@@ -38,6 +46,9 @@ func RequireAuth(apiKey string, sessions *cmauth.SessionManager) func(http.Handl
 			}
 
 			provided := r.Header.Get("X-API-Key")
+			if provided == "" {
+				provided = strings.TrimSpace(r.URL.Query().Get("api_key"))
+			}
 			if provided == "" {
 				writeAuthError(w, "missing credentials")
 				return

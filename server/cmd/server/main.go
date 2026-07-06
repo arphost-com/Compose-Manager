@@ -86,6 +86,9 @@ func main() {
 	dockerSettingsHandler := handlers.NewDockerSettingsHandler(cfg.DockerDaemonDir, cfg.BaseImagePrefix)
 	sslHandler := handlers.NewSSLHandler(cfg.StateDir, cfg.BaseImagePrefix)
 	auditHandler := handlers.NewAuditHandler(appStore)
+	watchManager := core.NewWatchManager(engine, cfg.StateDir)
+	defer watchManager.Shutdown()
+	watchHandler := handlers.NewWatchHandler(watchManager)
 	skillHandler := handlers.NewSkillHandler(registry)
 	authHandler := handlers.NewAuthHandler(userStore, sessionManager)
 
@@ -135,6 +138,14 @@ func main() {
 			r.Post("/projects/{name}/pull", projectHandler.Pull)
 			r.Post("/projects/{name}/up", projectHandler.Up)
 			r.Post("/projects/{name}/down", projectHandler.Down)
+
+			// Up + Watch: persistent live-tail startup logs. Refresh-safe.
+			r.Post("/projects/{name}/watch", watchHandler.Start)
+			r.Get("/projects/{name}/watch", watchHandler.List)
+			r.Get("/projects/{name}/watch/{sessionID}", watchHandler.Get)
+			r.Get("/projects/{name}/watch/{sessionID}/stream", watchHandler.Stream)
+			r.Delete("/projects/{name}/watch/{sessionID}", watchHandler.Stop)
+
 			r.Post("/projects/{name}/update", projectHandler.Update)
 			r.Post("/projects/{name}/restart", projectHandler.Restart)
 			r.Post("/projects/{name}/jobs/{action}", projectHandler.StartJob)

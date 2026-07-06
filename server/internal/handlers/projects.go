@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/arphost-com/Stack-Manager/server/internal/core"
@@ -393,12 +394,23 @@ func (h *ProjectHandler) ListRegistryLogins(w http.ResponseWriter, r *http.Reque
 
 // DeleteRegistryLogin removes a saved docker login by registry name.
 func (h *ProjectHandler) DeleteRegistryLogin(w http.ResponseWriter, r *http.Request) {
-	registry := chi.URLParam(r, "registry")
-	// The registry key from URL is URL-encoded. Common Docker Hub value:
-	// "https%3A%2F%2Findex.docker.io%2Fv1%2F" — chi decodes this automatically.
+	raw := chi.URLParam(r, "registry")
+	// chi refuses to decode %2F (encoded slash) inside URL parameters as a
+	// security measure - encoded slashes in a path can confuse routing. The
+	// Docker Hub registry key is "https://index.docker.io/v1/" which contains
+	// slashes, so the client encodes them and we must decode them here
+	// ourselves. Without this step DeleteSavedRegistryLogin was called with
+	// the raw "https%3A%2F%2Findex.docker.io%2Fv1%2F" string and reported
+	// success against a registry entry that never existed while the real
+	// entry was left in config.json.
+	registry, err := url.PathUnescape(raw)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "registry parameter is not valid URL encoding")
+		return
+	}
 	result := core.DeleteSavedRegistryLogin(registry)
 	if !result.Success {
-		writeJSON(w, http.StatusBadRequest, result)
+		writeErrorWithData(w, http.StatusBadRequest, "docker logout failed", result)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)

@@ -222,6 +222,23 @@ export const ssl = {
   renewLetsEncrypt: () => request('/settings/ssl/letsencrypt/renew', { method: 'POST' }),
 };
 
+// Watch = Up + persistent live-tail startup log. Sessions are stored on disk
+// so a browser refresh mid-stream replays from where it left off.
+export const watch = {
+  start: (name) => request(`/projects/${encodeURIComponent(name)}/watch`, { method: 'POST' }),
+  list: (name) => request(`/projects/${encodeURIComponent(name)}/watch`),
+  get: (name, sessionId) => request(`/projects/${encodeURIComponent(name)}/watch/${encodeURIComponent(sessionId)}`),
+  stop: (name, sessionId) => request(`/projects/${encodeURIComponent(name)}/watch/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
+  // The stream URL is opened directly via EventSource, which cannot set
+  // custom headers. Auth flows through the session cookie set at login;
+  // if the caller is using the legacy X-API-Key, pass it as ?api_key=.
+  streamUrl: (name, sessionId, apiKey) => {
+    const key = apiKey || localStorage.getItem('cm_api_key') || '';
+    const qs = key ? `?api_key=${encodeURIComponent(key)}` : '';
+    return `/api/v1/projects/${encodeURIComponent(name)}/watch/${encodeURIComponent(sessionId)}/stream${qs}`;
+  },
+};
+
 export const audit = {
   list: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== '' && v !== undefined && v !== null)).toString();

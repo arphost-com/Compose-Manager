@@ -125,38 +125,49 @@ export default function AuditLog() {
 
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
 
-      <div className="section-panel overflow-x-auto">
-        <table className="min-w-full text-sm">
+      <div className="section-panel">
+        <table className="w-full table-fixed text-sm">
+          <colgroup>
+            <col className="w-[10%]" />
+            <col className="w-[12%]" />
+            <col className="w-[9%]" />
+            <col className="w-[27%]" />
+            <col className="w-[12%]" />
+            <col className="w-[8%]" />
+            <col className="w-[5%]" />
+            <col className="w-[7%]" />
+            <col className="w-[10%]" />
+          </colgroup>
           <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
             <tr>
-              <th className="px-3 py-2">When</th>
-              <th className="px-3 py-2">Node</th>
-              <th className="px-3 py-2">Actor</th>
-              <th className="px-3 py-2">Action</th>
-              <th className="px-3 py-2">Project</th>
-              <th className="px-3 py-2">Target</th>
-              <th className="px-3 py-2">Result</th>
-              <th className="px-3 py-2">Duration</th>
-              <th className="px-3 py-2">IP</th>
+              <th className="px-2 py-2">When</th>
+              <th className="px-2 py-2">Node</th>
+              <th className="px-2 py-2">Actor</th>
+              <th className="px-2 py-2">Action</th>
+              <th className="px-2 py-2">Project</th>
+              <th className="px-2 py-2">Target</th>
+              <th className="px-2 py-2">Result</th>
+              <th className="px-2 py-2">Duration</th>
+              <th className="px-2 py-2">IP</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {entries.length === 0 && (
-              <tr><td colSpan={9} className="px-3 py-6 text-center text-gray-500">No entries match the current filters.</td></tr>
+              <tr><td colSpan={9} className="px-2 py-6 text-center text-gray-500">No entries match the current filters.</td></tr>
             )}
             {entries.map(entry => (
               <tr key={entry.id} className="align-top hover:bg-gray-100">
-                <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">{new Date(entry.created_at).toLocaleString()}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{entry.node || '—'}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{entry.actor || '—'}</td>
-                <td className="px-3 py-2 font-mono text-xs">{entry.action}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{entry.project || '—'}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{entry.target || '—'}</td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  {entry.success ? <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-800">OK</span> : <span className="rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-800">FAIL</span>}
+                <td className="truncate px-2 py-2 font-mono text-[11px]" title={new Date(entry.created_at).toISOString()}>{new Date(entry.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
+                <td className="truncate px-2 py-2 text-xs" title={entry.node}>{entry.node || '—'}</td>
+                <td className="truncate px-2 py-2 text-xs" title={entry.actor}>{entry.actor || '—'}</td>
+                <td className="truncate px-2 py-2 font-mono text-[11px]" title={entry.action}>{entry.action}</td>
+                <td className="truncate px-2 py-2 text-xs" title={entry.project}>{entry.project || '—'}</td>
+                <td className="truncate px-2 py-2 text-xs" title={entry.target}>{entry.target || '—'}</td>
+                <td className="px-2 py-2">
+                  {entry.success ? <span className="rounded bg-green-100 px-1.5 py-0.5 text-[11px] text-green-800">OK</span> : <span className="rounded bg-red-100 px-1.5 py-0.5 text-[11px] text-red-800">FAIL</span>}
                 </td>
-                <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-600">{formatDuration(entry.duration_ms)}</td>
-                <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-500">{entry.remote_ip || '—'}</td>
+                <td className="px-2 py-2 text-[11px] text-gray-600">{formatDuration(entry.duration_ms)}</td>
+                <td className="truncate px-2 py-2 font-mono text-[11px] text-gray-500" title={entry.remote_ip}>{entry.remote_ip || '—'}</td>
               </tr>
             ))}
           </tbody>
