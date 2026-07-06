@@ -73,8 +73,16 @@ func (c *MetricsCollector) Collect(ctx context.Context) {
 	}
 	for i := range projects {
 		projects[i].UpdatePolicy = c.store.ResolveUpdatePolicy(projects[i])
-		projects[i].ImageSources = c.engine.CheckImageSources(&projects[i])
-		c.store.SetJSON(ctx, "project_images:"+projects[i].Name, projects[i].ImageSources, c.cacheTTL)
+		// Only read compose config for image metadata - no network calls to
+		// registries. The background warmer used to run CheckImageSources
+		// here, which fired 1-2 `docker manifest inspect` calls per service
+		// every metrics tick. On a host with dozens of stacks that burned
+		// thousands of Docker Hub pulls per day for a status label that
+		// almost never changes. The Project Detail page still calls
+		// CheckImageSources on demand (cached per-project with CacheTTL and
+		// per-image with 24h), which is enough to keep the accessibility
+		// column fresh without draining the pull budget.
+		projects[i].ImageSources = c.engine.ImageSources(&projects[i])
 	}
 	c.store.SetJSON(ctx, "projects:list", projects, c.cacheTTL)
 

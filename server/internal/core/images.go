@@ -9,8 +9,54 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
+
+// Per-image manifest cache. Manifest inspect results are effectively static
+// (a tag pinned in compose.yaml points at the same digest for weeks or
+// months), so caching for a full day keeps the "public / private / not
+// found" access column fresh without turning every Dashboard render into a
+// wave of Docker Hub pulls. Restarting the server clears the cache, which
+// is fine because the miss path just re-issues the inspects.
+type manifestCacheEntry struct {
+	ok      bool
+	message string
+	expires time.Time
+}
+
+var (
+	manifestCacheMu   sync.RWMutex
+	manifestCache     = map[string]manifestCacheEntry{}
+	manifestCacheTTL  = 24 * time.Hour
+)
+
+func manifestCacheKey(image string, anonymous bool) string {
+	if anonymous {
+		return "anon:" + image
+	}
+	return "auth:" + image
+}
+
+func manifestCacheGet(image string, anonymous bool) (manifestCacheEntry, bool) {
+	manifestCacheMu.RLock()
+	defer manifestCacheMu.RUnlock()
+	entry, ok := manifestCache[manifestCacheKey(image, anonymous)]
+	if !ok || time.Now().After(entry.expires) {
+		return manifestCacheEntry{}, false
+	}
+	return entry, true
+}
+
+func manifestCacheSet(image string, anonymous, ok bool, message string) {
+	manifestCacheMu.Lock()
+	defer manifestCacheMu.Unlock()
+	manifestCache[manifestCacheKey(image, anonymous)] = manifestCacheEntry{
+		ok:      ok,
+		message: message,
+		expires: time.Now().Add(manifestCacheTTL),
+	}
+}
 
 // ImageSources returns compose service image metadata without contacting registries.
 func (e *Engine) ImageSources(project *Project) []ImageSource {
@@ -155,6 +201,10 @@ func isRegistryHost(part string) bool {
 }
 
 func manifestInspect(image string, anonymous bool) (bool, string) {
+	if entry, ok := manifestCacheGet(image, anonymous); ok {
+		return entry.ok, entry.message
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
@@ -176,6 +226,7 @@ func manifestInspect(image string, anonymous bool) (bool, string) {
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err == nil {
+		manifestCacheSet(image, anonymous, true, "")
 		return true, ""
 	}
 	msg := strings.TrimSpace(stderr.String())
@@ -185,6 +236,7 @@ func manifestInspect(image string, anonymous bool) (bool, string) {
 	if msg == "" {
 		msg = err.Error()
 	}
+	manifestCacheSet(image, anonymous, false, msg)
 	return false, msg
 }
 

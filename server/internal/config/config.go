@@ -62,12 +62,12 @@ func Load() (*Config, error) {
 		cacheTTL = 15
 	}
 	cfg.CacheTTL = time.Duration(cacheTTL) * time.Second
-	metricsMinutes, _ := strconv.Atoi(getEnv("METRICS_REFRESH_MINUTES", "15"))
+	metricsMinutes, _ := strconv.Atoi(getEnv("METRICS_REFRESH_MINUTES", "60"))
 	if metricsMinutes < 15 {
 		metricsMinutes = 15
 	}
 	cfg.MetricsInterval = time.Duration(metricsMinutes) * time.Minute
-	warmCacheMinutes, _ := strconv.Atoi(getEnv("WARM_CACHE_TTL_MINUTES", "30"))
+	warmCacheMinutes, _ := strconv.Atoi(getEnv("WARM_CACHE_TTL_MINUTES", "120"))
 	if warmCacheMinutes < metricsMinutes {
 		warmCacheMinutes = metricsMinutes * 2
 	}
