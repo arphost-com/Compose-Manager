@@ -17,8 +17,10 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/http.d/default.conf
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-# Runtime user is set by docker-compose to match SERVER_USER so bind-mounted
-# /etc/nginx/ssl on the host stays owner-consistent with state-init.
+# Default to a non-root UID so the image is safe even without a runtime
+# user override. docker-compose sets `user: ${SERVER_USER}` to match the
+# bind-mounted /etc/nginx/ssl ownership from state-init.
+USER 1001
 EXPOSE 8080 8443
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider --no-check-certificate https://127.0.0.1:8443/ || exit 1

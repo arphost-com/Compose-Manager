@@ -28,18 +28,25 @@ if [ ! -s "${CERT}" ] || [ ! -s "${KEY}" ]; then
     sans="${sans},DNS:localhost,IP:127.0.0.1"
 
     if [ -n "${SSL_EXTRA_SANS:-}" ]; then
-        old_ifs="${IFS}"
-        IFS=','
-        for extra in ${SSL_EXTRA_SANS}; do
-            extra="$(echo "${extra}" | tr -d ' ')"
+        # Convert comma list to newline list and iterate line-by-line so we
+        # never touch IFS (semgrep flags global IFS reassignment).
+        printf '%s\n' "${SSL_EXTRA_SANS}" | tr ',' '\n' | while IFS= read -r extra; do
+            extra="$(printf '%s' "${extra}" | tr -d ' ')"
             [ -z "${extra}" ] && continue
             case "${extra}" in
-                *:*) sans="${sans},${extra}" ;;
-                *[!0-9.]*) sans="${sans},DNS:${extra}" ;;
-                *) sans="${sans},IP:${extra}" ;;
+                *:*) printf 'raw:%s\n' "${extra}" ;;
+                *[!0-9.]*) printf 'dns:%s\n' "${extra}" ;;
+                *) printf 'ip:%s\n' "${extra}" ;;
             esac
-        done
-        IFS="${old_ifs}"
+        done > /tmp/sans-extra.txt
+        while IFS= read -r line; do
+            case "${line}" in
+                raw:*) sans="${sans},${line#raw:}" ;;
+                dns:*) sans="${sans},DNS:${line#dns:}" ;;
+                ip:*)  sans="${sans},IP:${line#ip:}" ;;
+            esac
+        done < /tmp/sans-extra.txt
+        rm -f /tmp/sans-extra.txt
     fi
 
     umask 077
