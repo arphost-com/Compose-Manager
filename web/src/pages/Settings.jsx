@@ -768,7 +768,7 @@ export default function Settings() {
             </div>
             <textarea className="textarea h-80 font-mono" value={dockerRaw} onChange={e => setDockerRaw(e.target.value)} title="Raw daemon.json. Invalid JSON is rejected before saving." />
             <div className="flex flex-wrap items-center gap-3">
-              <button className="btn-primary" title="Validate and save daemon.json on the Docker host.">Save Docker Settings</button>
+              <button type="submit" className="btn-primary" title="Validate and save daemon.json on the Docker host.">Save Docker Settings</button>
               {dockerStatus?.restart_required && <Badge tone="red">restart Docker to apply</Badge>}
               {dockerStatus?.backup && <span className="text-xs text-gray-500">Backup: {dockerStatus.backup}</span>}
             </div>
