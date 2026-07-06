@@ -16,7 +16,16 @@ mkdir -p "${SSL_DIR}" "${SSL_DIR}/acme-webroot"
 if [ ! -s "${CERT}" ] || [ ! -s "${KEY}" ]; then
     hostname_short="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo stack-manager)"
     hostname_fqdn="$(hostname -f 2>/dev/null || echo "${hostname_short}")"
-    common_name="${SSL_CN:-${hostname_fqdn}}"
+
+    # HOST_URL is set in .env to the public URL operators visit (e.g.
+    # https://docker02:8993). Prefer its hostname over the container's
+    # random Docker-assigned hostname for the cert CN.
+    host_from_url=""
+    if [ -n "${HOST_URL:-}" ]; then
+        host_from_url="$(printf '%s' "${HOST_URL}" | sed -E 's|^[a-zA-Z]+://||; s|/.*$||; s|:[0-9]+$||')"
+    fi
+
+    common_name="${SSL_CN:-${host_from_url:-${hostname_fqdn}}}"
 
     sans="DNS:${common_name}"
     if [ "${hostname_short}" != "${common_name}" ]; then
