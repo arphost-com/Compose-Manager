@@ -102,7 +102,9 @@ services:
         source: ${STATE_DIR:-.stack-manager}/ssl
         target: /etc/nginx/ssl
         bind:
-          create_host_path: false
+          # Auto-create if missing so a fresh docker02 deploy comes up even
+          # before state-init has run. state-init still owns the chmod/chown.
+          create_host_path: true
     depends_on:
       state-init:
         condition: service_completed_successfully
