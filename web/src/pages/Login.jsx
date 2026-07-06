@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { auth } from '../api/client';
 
 export default function Login() {
-  const [form, setForm] = useState({ username: 'admin', password: '' });
+  const [form, setForm] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -33,11 +33,11 @@ export default function Login() {
         {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-gray-700">Username</span>
-          <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} className="input" autoComplete="username" />
+          <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} className="input" autoComplete="username" autoFocus />
         </label>
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-gray-700">Password</span>
-          <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="input" autoComplete="current-password" autoFocus />
+          <input type="password" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} className="input" autoComplete="current-password" />
         </label>
         <button disabled={loading} className="btn-primary w-full">{loading ? 'Signing in...' : 'Sign In'}</button>
       </form>

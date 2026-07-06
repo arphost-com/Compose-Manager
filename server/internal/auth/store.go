@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -54,8 +56,40 @@ func NewStore(store *storage.Store, adminUsername, adminPassword string) (*Store
 		if err := s.CreateUser(adminUsername, adminPassword, RoleAdmin); err != nil {
 			return nil, err
 		}
+	} else if resetAdminOnBoot() && strings.TrimSpace(adminPassword) != "" {
+		// Operator escape hatch: after changing ADMIN_PASSWORD in .env,
+		// set RESET_ADMIN_PASSWORD=1 and restart the server to force the
+		// stored hash to match. Server logs when this fires so a stray
+		// env value doesn't silently clobber a UI-set password.
+		if err := s.upsertUserPassword(adminUsername, adminPassword, RoleAdmin); err != nil {
+			return nil, fmt.Errorf("RESET_ADMIN_PASSWORD: %w", err)
+		}
+		log.Printf("auth: RESET_ADMIN_PASSWORD applied for %s; clear the env var to avoid overwriting on next boot", adminUsername)
 	}
 	return s, nil
+}
+
+func resetAdminOnBoot() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("RESET_ADMIN_PASSWORD")))
+	return v == "1" || v == "true" || v == "yes" || v == "force"
+}
+
+func (s *Store) upsertUserPassword(username, password, role string) error {
+	username = normalizeUsername(username)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	_, err = s.store.DB.ExecContext(context.Background(),
+		`INSERT INTO users (username, password_hash, role, created_at)
+		 VALUES (?, ?, ?, ?)
+		 ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash), role=VALUES(role)`,
+		username, string(hash), role, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	s.store.DeleteCache(context.Background(), "users:list")
+	return nil
 }
 
 func (s *Store) Authenticate(username, password string) (PublicUser, bool) {

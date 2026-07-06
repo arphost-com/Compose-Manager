@@ -40,6 +40,7 @@ services:
       API_KEY: "${API_KEY:?API_KEY required}"
       ADMIN_USERNAME: "${ADMIN_USERNAME:-admin}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
+      RESET_ADMIN_PASSWORD: "${RESET_ADMIN_PASSWORD:-}"
       DB_HOST: "mariadb"
       DB_PORT: "3306"
       DB_NAME: "${DB_NAME:-stack_manager}"
