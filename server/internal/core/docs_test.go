@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -19,17 +20,61 @@ func TestProjectDocsDiscoversRootAndDocsDirectoryFiles(t *testing.T) {
 	project := &Project{Name: "demo", Dir: dir}
 	docs := engine.ProjectDocs(project)
 
-	if len(docs) != 3 {
-		t.Fatalf("expected 3 docs, got %d: %#v", len(docs), docs)
+	if len(docs) != 4 {
+		t.Fatalf("expected 4 docs, got %d: %#v", len(docs), docs)
 	}
-	if docs[0].Path != "README.md" {
-		t.Fatalf("expected README first, got %q", docs[0].Path)
+	if docs[0].Path != generatedProjectDocPath {
+		t.Fatalf("expected generated guide first, got %q", docs[0].Path)
 	}
-	if docs[1].Path != "RUNBOOK" {
-		t.Fatalf("expected RUNBOOK second, got %q", docs[1].Path)
+	if docs[1].Path != "README.md" {
+		t.Fatalf("expected README second, got %q", docs[1].Path)
 	}
-	if docs[2].Path != "docs/runbook.md" {
-		t.Fatalf("expected docs/runbook.md third, got %q", docs[2].Path)
+	if docs[2].Path != "RUNBOOK" {
+		t.Fatalf("expected RUNBOOK third, got %q", docs[2].Path)
+	}
+	if docs[3].Path != "docs/runbook.md" {
+		t.Fatalf("expected docs/runbook.md fourth, got %q", docs[3].Path)
+	}
+}
+
+func TestProjectDocsIncludesGeneratedGuideWhenNoProjectDocsExist(t *testing.T) {
+	dir := t.TempDir()
+	composePath := filepath.Join(dir, "compose.yml")
+	writeTestFile(t, composePath, "services:\n  web:\n    image: nginx:stable\n")
+
+	engine := NewEngine(dir, "")
+	project := &Project{
+		Name:        "demo",
+		Dir:         dir,
+		ComposeFile: composePath,
+		ImageSources: []ImageSource{{
+			Service:    "web",
+			Image:      "nginx:stable",
+			SourceType: "registry",
+			Registry:   "docker.io",
+		}},
+	}
+
+	docs := engine.ProjectDocs(project)
+	if len(docs) != 1 {
+		t.Fatalf("expected only generated guide, got %d docs: %#v", len(docs), docs)
+	}
+	if docs[0].Path != generatedProjectDocPath {
+		t.Fatalf("expected generated guide path, got %q", docs[0].Path)
+	}
+
+	content, err := engine.ReadProjectDoc(project, generatedProjectDocPath)
+	if err != nil {
+		t.Fatalf("expected generated guide to be readable: %v", err)
+	}
+	if content.Doc.Path != generatedProjectDocPath {
+		t.Fatalf("unexpected generated doc path: %q", content.Doc.Path)
+	}
+	if !strings.Contains(content.Content, "# demo") {
+		t.Fatalf("generated guide missing project heading: %q", content.Content)
+	}
+	if !strings.Contains(content.Content, "nginx:stable") {
+		t.Fatalf("generated guide missing image source: %q", content.Content)
 	}
 }
 
