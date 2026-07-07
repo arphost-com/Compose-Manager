@@ -167,41 +167,40 @@ func anonymousDockerConfig() (string, func(), error) {
 }
 
 func digestFromManifest(raw []byte) string {
-	var payload interface{}
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	var list []manifestInspectResult
+	if err := json.Unmarshal(raw, &list); err == nil {
+		for _, item := range list {
+			if digest := item.digest(); digest != "" {
+				return digest
+			}
+		}
+	}
+
+	var item manifestInspectResult
+	if err := json.Unmarshal(raw, &item); err != nil {
 		return ""
 	}
-	if digest := descriptorDigest(payload); digest != "" {
-		return digest
+	return item.digest()
+}
+
+type manifestInspectResult struct {
+	Descriptor manifestDescriptor `json:"Descriptor"`
+	Digest     string             `json:"digest"`
+	DigestAlt  string             `json:"Digest"`
+}
+
+func (r manifestInspectResult) digest() string {
+	for _, digest := range []string{r.Descriptor.Digest, r.Descriptor.DigestAlt, r.Digest, r.DigestAlt} {
+		if strings.HasPrefix(digest, "sha256:") {
+			return digest
+		}
 	}
 	return ""
 }
 
-func descriptorDigest(value interface{}) string {
-	switch v := value.(type) {
-	case []interface{}:
-		for _, item := range v {
-			if digest := descriptorDigest(item); digest != "" {
-				return digest
-			}
-		}
-	case map[string]interface{}:
-		if descriptor, ok := v["Descriptor"].(map[string]interface{}); ok {
-			if digest, ok := descriptor["digest"].(string); ok && strings.HasPrefix(digest, "sha256:") {
-				return digest
-			}
-			if digest, ok := descriptor["Digest"].(string); ok && strings.HasPrefix(digest, "sha256:") {
-				return digest
-			}
-		}
-		if digest, ok := v["digest"].(string); ok && strings.HasPrefix(digest, "sha256:") {
-			return digest
-		}
-		if digest, ok := v["Digest"].(string); ok && strings.HasPrefix(digest, "sha256:") {
-			return digest
-		}
-	}
-	return ""
+type manifestDescriptor struct {
+	Digest    string `json:"digest"`
+	DigestAlt string `json:"Digest"`
 }
 
 func digestMatches(local, remote string) bool {
