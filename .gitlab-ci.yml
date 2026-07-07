@@ -349,26 +349,51 @@ smoke:docker02:
     - when: never
   variables:
     STACK_TEMPLATE_SMOKE_MODE: "startup"
-    STACK_TEMPLATE_WORK_DIR: "/home/debian/docker/.stack-template-smoke"
+    STACK_TEMPLATE_TEST_HOST: ""
+    STACK_TEMPLATE_TEST_USER: "root"
+    STACK_TEMPLATE_TEST_PRIVATE_KEY: ""
+    STACK_TEMPLATE_WORK_DIR: "/root/.stack-template-smoke"
     STACK_TEMPLATE_PROJECT_PREFIX: "stack-smoke-${CI_PIPELINE_ID}"
     STACK_TEMPLATE_SETTLE: "45s"
   script:
     - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e GOCACHE=/tmp/go-build -e GOMODCACHE=/tmp/go-mod -v "$PWD/server:/src" -w /src golang:1.25-alpine go build -o /src/template-smoke ./cmd/template-smoke
-    - sudo -n mkdir -p "${STACK_TEMPLATE_WORK_DIR}"
-    - sudo -n chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${STACK_TEMPLATE_WORK_DIR}"
     - |
-      sudo -n -u "${DEPLOY_USER}" env \
-        STACK_TEMPLATE_SMOKE_MODE="${STACK_TEMPLATE_SMOKE_MODE}" \
-        STACK_TEMPLATE_WORK_DIR="${STACK_TEMPLATE_WORK_DIR}" \
-        STACK_TEMPLATE_PROJECT_PREFIX="${STACK_TEMPLATE_PROJECT_PREFIX}" \
-        STACK_TEMPLATE_SETTLE="${STACK_TEMPLATE_SETTLE}" \
-        STACK_TEMPLATE_ID="${STACK_TEMPLATE_ID:-}" \
-        STACK_TEMPLATE_ALL="${STACK_TEMPLATE_ALL:-}" \
-        STACK_TEMPLATE_CATEGORY="${STACK_TEMPLATE_CATEGORY:-}" \
-        STACK_TEMPLATE_SUBCATEGORY="${STACK_TEMPLATE_SUBCATEGORY:-}" \
-        "${CI_PROJECT_DIR}/server/template-smoke"
+      set -eu
+      if [ -z "${STACK_TEMPLATE_TEST_HOST:-}" ]; then
+        echo "Set STACK_TEMPLATE_TEST_HOST to the test server IP or hostname before running this manual job."
+        exit 1
+      fi
+      command -v ssh >/dev/null
+      command -v scp >/dev/null
+      ssh_key_arg=""
+      if [ -n "${STACK_TEMPLATE_TEST_PRIVATE_KEY:-}" ]; then
+        key_file="${CI_PROJECT_DIR}/.stack-template-test-key"
+        umask 077
+        printf '%s\n' "${STACK_TEMPLATE_TEST_PRIVATE_KEY}" > "${key_file}"
+        ssh_key_arg="-i ${key_file}"
+      fi
+      remote="${STACK_TEMPLATE_TEST_USER}@${STACK_TEMPLATE_TEST_HOST}"
+      known_hosts="${CI_PROJECT_DIR}/.stack-template-known-hosts"
+      ssh_opts="${ssh_key_arg} -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${known_hosts}"
+      ssh ${ssh_opts} "${remote}" "mkdir -p '${STACK_TEMPLATE_WORK_DIR}'"
+      scp ${ssh_opts} "${CI_PROJECT_DIR}/server/template-smoke" "${remote}:${STACK_TEMPLATE_WORK_DIR}/template-smoke"
+      ssh ${ssh_opts} "${remote}" \
+        "chmod 700 '${STACK_TEMPLATE_WORK_DIR}/template-smoke' && env STACK_TEMPLATE_SMOKE_MODE='${STACK_TEMPLATE_SMOKE_MODE}' STACK_TEMPLATE_WORK_DIR='${STACK_TEMPLATE_WORK_DIR}' STACK_TEMPLATE_PROJECT_PREFIX='${STACK_TEMPLATE_PROJECT_PREFIX}' STACK_TEMPLATE_SETTLE='${STACK_TEMPLATE_SETTLE}' STACK_TEMPLATE_ID='${STACK_TEMPLATE_ID:-}' STACK_TEMPLATE_ALL='${STACK_TEMPLATE_ALL:-}' STACK_TEMPLATE_CATEGORY='${STACK_TEMPLATE_CATEGORY:-}' STACK_TEMPLATE_SUBCATEGORY='${STACK_TEMPLATE_SUBCATEGORY:-}' '${STACK_TEMPLATE_WORK_DIR}/template-smoke'"
   after_script:
-    - sudo -n -u "${DEPLOY_USER}" env STACK_TEMPLATE_PROJECT_PREFIX="${STACK_TEMPLATE_PROJECT_PREFIX}" sh -c 'for project in $(docker compose ls --format json 2>/dev/null | sed -n "s/.*\"Name\":\"\([^\"]*\)\".*/\1/p" | grep "^${STACK_TEMPLATE_PROJECT_PREFIX}" || true); do docker compose -p "$project" down -v --remove-orphans || true; done'
+    - |
+      if [ -n "${STACK_TEMPLATE_TEST_HOST:-}" ]; then
+        ssh_key_arg=""
+        if [ -n "${STACK_TEMPLATE_TEST_PRIVATE_KEY:-}" ]; then
+          key_file="${CI_PROJECT_DIR}/.stack-template-test-key"
+          umask 077
+          printf '%s\n' "${STACK_TEMPLATE_TEST_PRIVATE_KEY}" > "${key_file}"
+          ssh_key_arg="-i ${key_file}"
+        fi
+        remote="${STACK_TEMPLATE_TEST_USER}@${STACK_TEMPLATE_TEST_HOST}"
+        known_hosts="${CI_PROJECT_DIR}/.stack-template-known-hosts"
+        ssh_opts="${ssh_key_arg} -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=${known_hosts}"
+        ssh ${ssh_opts} "${remote}" "for project in \$(docker ps -a --filter label=com.docker.compose.project --format '{{.Label \"com.docker.compose.project\"}}' | grep '^${STACK_TEMPLATE_PROJECT_PREFIX}' | sort -u || true); do docker compose -p \"\$project\" down -v --remove-orphans || true; done" || true
+      fi
 
 smoke:stack-template:
   extends: .smoke_stack_template_base
