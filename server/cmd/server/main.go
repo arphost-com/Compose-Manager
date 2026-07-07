@@ -123,6 +123,7 @@ func main() {
 
 			r.Get("/auth/me", authHandler.Me)
 			r.Post("/auth/logout", authHandler.Logout)
+			r.Post("/auth/change-password", authHandler.ChangeOwnPassword)
 			r.Get("/users", authHandler.ListUsers)
 			r.Post("/users", authHandler.CreateUser)
 			r.Put("/users/{username}/password", authHandler.SetPassword)

@@ -1,8 +1,33 @@
+import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { auth } from '../api/client';
 
 export default function Layout() {
   const location = useLocation();
   const isActive = (path) => location.pathname === path ? 'bg-gray-100 text-gray-950' : 'text-gray-600';
+  const [me, setMe] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('cm_user') || 'null'); } catch { return null; }
+  });
+
+  useEffect(() => {
+    // Refresh cached identity so the header shows the right name after login.
+    auth.me().then(res => {
+      if (res.data) {
+        setMe(res.data);
+        localStorage.setItem('cm_user', JSON.stringify(res.data));
+      }
+    }).catch(() => {});
+  }, []);
+
+  const logout = async () => {
+    if (!window.confirm('Sign out of Stack Manager?')) return;
+    try { await auth.logout(); } catch {}
+    localStorage.removeItem('cm_token');
+    localStorage.removeItem('cm_user');
+    localStorage.removeItem('cm_api_key');
+    Object.keys(localStorage).filter(k => k.startsWith('cm_dashboard_v')).forEach(k => localStorage.removeItem(k));
+    window.location.href = '/';
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-950">
@@ -13,6 +38,21 @@ export default function Layout() {
           <Link to="/catalog" className={`rounded-md px-3 py-1.5 text-sm hover:bg-gray-100 ${isActive('/catalog')}`}>Stack Catalog</Link>
           <Link to="/audit" className={`rounded-md px-3 py-1.5 text-sm hover:bg-gray-100 ${isActive('/audit')}`}>Audit Log</Link>
           <Link to="/settings" className={`rounded-md px-3 py-1.5 text-sm hover:bg-gray-100 ${isActive('/settings')}`}>Settings</Link>
+          <div className="ml-auto flex items-center gap-3 text-sm">
+            {me && (
+              <span className="text-gray-600" title={`Signed in as ${me.username} (${me.role})`}>
+                {me.username} <span className="text-xs text-gray-400">({me.role})</span>
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={logout}
+              className="btn-secondary text-sm"
+              title="Sign out of Stack Manager. Ends this browser session."
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
       </nav>
       <main className="max-w-7xl mx-auto px-6 py-6">

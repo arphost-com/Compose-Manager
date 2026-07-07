@@ -88,6 +88,7 @@ export default function Settings() {
   const [error, setError] = useState('');
   const [form, setForm] = useState({ username: '', password: '', role: 'operator' });
   const [resetForm, setResetForm] = useState({ username: '', password: '' });
+  const [changeMyPasswordForm, setChangeMyPasswordForm] = useState({ current: '', next: '', confirm: '' });
   const [destinationForm, setDestinationForm] = useState(emptyDestinationForm);
   const [scheduleForm, setScheduleForm] = useState(emptyScheduleForm);
   const [agentForm, setAgentForm] = useState(emptyAgentForm);
@@ -205,6 +206,25 @@ export default function Settings() {
       await users.setPassword(resetForm.username, resetForm.password);
       showMessage(`Updated password for ${resetForm.username}`);
       setResetForm({ username: '', password: '' });
+    } catch (err) {
+      showError(err);
+    }
+  };
+
+  const changeMyPassword = async (event) => {
+    event.preventDefault();
+    if (changeMyPasswordForm.next !== changeMyPasswordForm.confirm) {
+      showError(new Error('New password and confirmation do not match.'));
+      return;
+    }
+    if (changeMyPasswordForm.next.length < 12) {
+      showError(new Error('New password must be at least 12 characters.'));
+      return;
+    }
+    try {
+      await auth.changePassword(changeMyPasswordForm.current, changeMyPasswordForm.next);
+      showMessage('Password changed. Use the new password next time you sign in.');
+      setChangeMyPasswordForm({ current: '', next: '', confirm: '' });
     } catch (err) {
       showError(err);
     }
@@ -546,24 +566,79 @@ export default function Settings() {
       {message && <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">{message}</div>}
 
       {activeTab === 'account' && (
-        <div className="section-panel">
-          <div className="grid gap-4 md:grid-cols-[1fr_300px] md:items-end">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-950">Account</h2>
-              <p className="mt-1 text-sm text-gray-600">Theme preference is saved in this browser. Signing out removes the current browser session.</p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="flex items-center gap-2 text-sm text-gray-700" title="Choose light, dark, or follow the operating system theme.">
-                Theme
-                <select value={theme} onChange={e => updateTheme(e.target.value)} className="input w-36">
-                  <option value="system">System</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
-              </label>
-              <button onClick={logout} className="btn-secondary">Sign Out</button>
+        <div className="space-y-4">
+          <div className="section-panel">
+            <div className="grid gap-4 md:grid-cols-[1fr_300px] md:items-end">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-950">Account</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Signed in as <span className="font-mono">{me?.username || '…'}</span>{me?.role && <> · role <span className="font-mono">{me.role}</span></>}. Theme preference is saved in this browser.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 text-sm text-gray-700" title="Choose light, dark, or follow the operating system theme.">
+                  Theme
+                  <select value={theme} onChange={e => updateTheme(e.target.value)} className="input w-36">
+                    <option value="system">System</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                  </select>
+                </label>
+                <button onClick={logout} className="btn-secondary">Sign Out</button>
+              </div>
             </div>
           </div>
+
+          <form onSubmit={changeMyPassword} className="section-panel space-y-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-950">Change my password</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Rotates your login credential. Requires your current password so a stolen browser session can not change it without you.
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <label className="text-sm">
+                <span className="text-gray-700">Current password</span>
+                <input
+                  type="password"
+                  className="input mt-1 w-full"
+                  autoComplete="current-password"
+                  value={changeMyPasswordForm.current}
+                  onChange={e => setChangeMyPasswordForm({ ...changeMyPasswordForm, current: e.target.value })}
+                  required
+                />
+              </label>
+              <label className="text-sm">
+                <span className="text-gray-700">New password (12+ chars)</span>
+                <input
+                  type="password"
+                  className="input mt-1 w-full"
+                  autoComplete="new-password"
+                  value={changeMyPasswordForm.next}
+                  onChange={e => setChangeMyPasswordForm({ ...changeMyPasswordForm, next: e.target.value })}
+                  required
+                  minLength={12}
+                />
+              </label>
+              <label className="text-sm">
+                <span className="text-gray-700">Confirm new password</span>
+                <input
+                  type="password"
+                  className="input mt-1 w-full"
+                  autoComplete="new-password"
+                  value={changeMyPasswordForm.confirm}
+                  onChange={e => setChangeMyPasswordForm({ ...changeMyPasswordForm, confirm: e.target.value })}
+                  required
+                  minLength={12}
+                />
+              </label>
+            </div>
+            <div>
+              <button type="submit" className="btn-primary" title="Update your login password. Existing browser sessions stay valid until they expire; new sign-ins must use the new password.">
+                Change password
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

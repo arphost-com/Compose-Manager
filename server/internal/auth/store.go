@@ -188,6 +188,16 @@ func (s *Store) SetPassword(username, password string) error {
 	return nil
 }
 
+// ChangeOwnPassword rotates a user's password after verifying the current
+// password. Non-admins use this to change their own login without needing
+// the "Users" admin tab.
+func (s *Store) ChangeOwnPassword(username, currentPassword, newPassword string) error {
+	if _, ok := s.Authenticate(username, currentPassword); !ok {
+		return fmt.Errorf("current password is incorrect")
+	}
+	return s.SetPassword(username, newPassword)
+}
+
 func (s *Store) DeleteUser(username string) error {
 	username = normalizeUsername(username)
 	ctx := context.Background()

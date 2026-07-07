@@ -112,6 +112,32 @@ func (h *AuthHandler) SetPassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"username": username})
 }
 
+// ChangeOwnPassword lets any authenticated user rotate their own password by
+// providing the current one. This is the "My Account" flow - separate from
+// the admin-only SetPassword above which is for resetting someone else's
+// login. The middleware already required auth, so the caller identity is
+// trusted.
+func (h *AuthHandler) ChangeOwnPassword(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.CurrentUser(r)
+	if !ok || user.Username == "" {
+		writeError(w, http.StatusUnauthorized, "not signed in")
+		return
+	}
+	var body struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.Store.ChangeOwnPassword(user.Username, body.CurrentPassword, body.NewPassword); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"username": user.Username})
+}
+
 func (h *AuthHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	if !middleware.RequireAdmin(w, r) {
 		return
