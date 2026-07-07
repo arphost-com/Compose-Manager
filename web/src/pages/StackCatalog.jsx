@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { projects, stackTemplates } from '../api/client';
 
 const CATEGORY_LABELS = {
@@ -44,6 +45,8 @@ const SUBCATEGORY_LABELS = {
   'voice-speech': 'Voice / speech',
   'vector-db': 'Vector DB',
   'workflow-rag': 'Workflow / RAG',
+  'observability': 'Observability',
+  'evals': 'Evals / testing',
   'search': 'Search',
 };
 
@@ -55,8 +58,10 @@ const SUBCATEGORY_DESCRIPTIONS = {
   'image-generation': 'Stable Diffusion and other text-to-image / image-to-image tools. Most benefit from an NVIDIA GPU.',
   'voice-speech': 'Text-to-speech, automatic speech recognition, and voice cloning servers.',
   'vector-db': 'Vector similarity databases for embeddings and RAG. Pair with an LLM inference stack.',
-  'workflow-rag': 'RAG pipelines and LLM workflow builders — orchestration for chains, tools, and document ingestion.',
-  'search': 'Full-text and hybrid search engines. Some support vector search alongside classic BM25.',
+  'workflow-rag': 'RAG pipelines, chat platforms, memory layers, and LLM workflow builders for document ingestion, tools, and agent orchestration.',
+  'observability': 'LLM tracing, prompt management, metrics, datasets, experiments, and evaluation workflows for running AI systems.',
+  'evals': 'Prompt, model, RAG, and agent evaluation tools, including red-team and regression testing workflows.',
+  'search': 'Full-text, hybrid search, crawlers, and web-context extraction tools for AI apps and agents.',
 };
 
 const SUBCATEGORY_ORDER = [
@@ -67,6 +72,8 @@ const SUBCATEGORY_ORDER = [
   'voice-speech',
   'vector-db',
   'workflow-rag',
+  'observability',
+  'evals',
   'search',
 ];
 
@@ -81,6 +88,7 @@ function labelForSubcategory(sub) {
 const EMPTY_FORM = { name: '', compose_content: '', env_content: '', inactive: false, overwrite: false };
 
 export default function StackCatalog() {
+  const navigate = useNavigate();
   const [templates, setTemplates] = useState([]);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
@@ -89,6 +97,7 @@ export default function StackCatalog() {
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
+  const [errorDetails, setErrorDetails] = useState('');
 
   const load = async () => {
     try {
@@ -96,6 +105,7 @@ export default function StackCatalog() {
       setTemplates(res.data || []);
     } catch (err) {
       setMessage({ type: 'error', text: err.message });
+      setErrorDetails(err.data?.output || err.data?.error || '');
     }
   };
 
@@ -156,6 +166,7 @@ export default function StackCatalog() {
       overwrite: false,
     });
     setMessage(null);
+    setErrorDetails('');
   };
 
   const closeModal = () => {
@@ -166,15 +177,22 @@ export default function StackCatalog() {
 
   const spinItUp = async (event) => {
     event.preventDefault();
+    const projectName = form.name.trim();
     setSubmitting(true);
-    setMessage({ type: 'running', text: `Creating ${form.name}...` });
+    setErrorDetails('');
+    setMessage({ type: 'running', text: form.inactive ? `Creating ${projectName}...` : `Creating and starting ${projectName}...` });
     try {
-      await projects.create(form);
-      setMessage({ type: 'ok', text: `Spun up ${form.name}. Head to the Dashboard to check status.` });
-      setSelected(null);
-      setForm(EMPTY_FORM);
+      await projects.create({ ...form, name: projectName });
+      if (form.inactive) {
+        navigate(`/projects/${encodeURIComponent(projectName)}`);
+        return;
+      }
+      const res = await projects.startJob(projectName, 'up');
+      const params = new URLSearchParams({ job: res.data.id, action: 'up' });
+      navigate(`/projects/${encodeURIComponent(projectName)}?${params.toString()}`);
     } catch (err) {
       setMessage({ type: 'error', text: err.message });
+      setErrorDetails(err.data?.output || err.data?.error || err.envelope?.error || '');
     } finally {
       setSubmitting(false);
     }
@@ -193,7 +211,14 @@ export default function StackCatalog() {
         <button onClick={load} className="btn-secondary" title="Reload the built-in stack catalog.">Refresh</button>
       </div>
 
-      {message && <div className={`rounded border px-4 py-3 text-sm ${message.type === 'error' ? 'border-red-200 bg-red-50 text-red-900' : message.type === 'running' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-green-200 bg-green-50 text-green-900'}`}>{message.text}</div>}
+      {message && (
+        <div className={`rounded border px-4 py-3 text-sm ${message.type === 'error' ? 'border-red-200 bg-red-50 text-red-900' : message.type === 'running' ? 'border-blue-200 bg-blue-50 text-blue-900' : 'border-green-200 bg-green-50 text-green-900'}`}>
+          <div>{message.text}</div>
+          {errorDetails && (
+            <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded bg-gray-950 p-3 font-mono text-xs text-gray-100">{errorDetails}</pre>
+          )}
+        </div>
+      )}
 
       <div className="section-panel space-y-3">
         <input className="input w-full" value={query} onChange={e => setQuery(e.target.value)} placeholder="search templates, tags, categories" title="Filter catalog templates by name, description, tags, or (sub)category." />

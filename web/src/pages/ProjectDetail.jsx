@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { projects, jobs, debug as debugApi, security, backup, dbadmin, watch as watchApi } from '../api/client';
 
 const TABS = ['overview', 'sessions', 'sources', 'watch', 'logs', 'stats', 'shell', 'security', 'backups', 'databases', 'inspect', 'processes'];
@@ -13,6 +13,7 @@ const ACTIONS = [
 
 export default function ProjectDetail() {
   const { name } = useParams();
+  const location = useLocation();
   const [project, setProject] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [tabData, setTabData] = useState(null);
@@ -26,6 +27,7 @@ export default function ProjectDetail() {
   const [backupDestinations, setBackupDestinations] = useState([]);
   const [shellForm, setShellForm] = useState({ command: 'ps', tail: 200, timeout: 300 });
   const [shellResult, setShellResult] = useState(null);
+  const startupJobRef = useRef('');
 
   const fetchProject = async () => {
     try {
@@ -44,6 +46,17 @@ export default function ProjectDetail() {
   };
 
   useEffect(() => { fetchProject(); }, [name]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const jobId = params.get('job');
+    if (!jobId || startupJobRef.current === jobId) return;
+    startupJobRef.current = jobId;
+    const label = params.get('action') || 'up';
+    setActiveTab('sessions');
+    setActionResult({ status: 'running', label, job: { id: jobId, status: 'running' } });
+    pollJob(jobId, label);
+  }, [location.search]);
 
   useEffect(() => {
     if (activeTab !== 'logs' || !logOptions.watch) return undefined;

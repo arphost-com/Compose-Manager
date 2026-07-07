@@ -1366,6 +1366,7 @@ volumes:
 	}
 	templates = append(templates, categoryExpansionStackTemplates()...)
 	templates = append(templates, catalogFillTemplates()...)
+	templates = append(templates, vettedAIStackTemplates()...)
 	templates = append(templates, personalAgentStackTemplates()...)
 	sort.Slice(templates, func(i, j int) bool {
 		return templates[i].Name < templates[j].Name

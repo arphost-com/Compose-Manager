@@ -10,6 +10,7 @@ import Login from './pages/Login';
 import { applyThemePreference } from './theme';
 import StackCatalog from './pages/StackCatalog';
 import AuditLog from './pages/AuditLog';
+import Documentation from './pages/Documentation';
 
 applyThemePreference();
 if (window.matchMedia) {
@@ -30,6 +31,7 @@ function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/catalog" element={<StackCatalog />} />
           <Route path="/audit" element={<AuditLog />} />
+          <Route path="/docs" element={<Documentation />} />
           <Route path="/projects/:name" element={<ProjectDetail />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />

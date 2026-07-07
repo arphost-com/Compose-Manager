@@ -37,6 +37,7 @@ export default function Layout() {
           <Link to="/" className={`rounded-md px-3 py-1.5 text-sm hover:bg-gray-100 ${isActive('/')}`}>Dashboard</Link>
           <Link to="/catalog" className={`rounded-md px-3 py-1.5 text-sm hover:bg-gray-100 ${isActive('/catalog')}`}>Stack Catalog</Link>
           <Link to="/audit" className={`rounded-md px-3 py-1.5 text-sm hover:bg-gray-100 ${isActive('/audit')}`}>Audit Log</Link>
+          <Link to="/docs" className={`rounded-md px-3 py-1.5 text-sm hover:bg-gray-100 ${isActive('/docs')}`}>Documentation</Link>
           <Link to="/settings" className={`rounded-md px-3 py-1.5 text-sm hover:bg-gray-100 ${isActive('/settings')}`}>Settings</Link>
           <div className="ml-auto flex items-center gap-3 text-sm">
             {me && (

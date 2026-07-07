@@ -22,6 +22,7 @@ Load a template, edit the `compose.yml` / `.env`, and deploy — or point the da
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Web Dashboard](#web-dashboard)
+- [Stack Catalog](#stack-catalog)
 - [Project Layout](#project-layout)
 - [Usage](#usage)
   - [Basic Commands](#basic-commands)
@@ -341,9 +342,65 @@ Use the Project Detail overview page to view or override the policy.
 
 The dashboard includes a built-in stack catalog modeled after Docker GUI template flows such as Kitematic image browsing and Portainer app templates. Choosing a template does not deploy immediately; it loads editable `compose.yml` and `.env` content into the Create Project form so the operator can review paths, ports, passwords, and volumes first.
 
-Initial built-in templates include WordPress/MariaDB, Nginx static site, PostgreSQL, Redis, Gitea, Uptime Kuma, Portainer Agent, and Prometheus/Grafana. These are normal Compose projects after creation and can be edited later on disk like any other project.
+Catalog counts are intentionally balanced so each main category and each AI subcategory has a useful scan view. Templates are normal Compose projects after creation and can be edited later on disk like any other project.
 
-The catalog also includes additional self-hosted templates such as Paperless-ngx, Stirling PDF, Homepage, MinIO, Mealie, Syncthing, NocoDB, and AI starters including Ollama, Open WebUI, vLLM, Text Generation Inference, LiteLLM Proxy, AnythingLLM, Flowise, Langflow, LocalAI, Qdrant, Weaviate, Chroma, Whisper ASR, JupyterLab PyTorch, ComfyUI, and Stable Diffusion web UI.
+![Personal AI agents catalog](docs/images/catalog-personal-ai-agents-dark.png)
+![Web catalog](docs/images/catalog-web-dark.png)
+![CMS catalog](docs/images/catalog-cms-dark.png)
+![Database catalog](docs/images/catalog-database-light.png)
+![Queue catalog](docs/images/catalog-queue-light.png)
+![Dev Tools catalog](docs/images/catalog-devtools-light.png)
+
+Main categories include:
+
+| Category | What it covers |
+| --- | --- |
+| AI | LLM inference, code assistants, personal agents, image generation, voice/speech, vector DBs, workflow/RAG, observability, evals, and search/crawling |
+| Web | Static web servers and lightweight HTTP test services |
+| Proxy | Reverse proxies, TLS front ends, and identity-aware proxies |
+| CMS | CMS, blog, headless CMS, and e-commerce stacks |
+| Database | SQL, NoSQL, cache, graph, and database-admin stacks |
+| Dev Tools | Git forges, CI/CD, browser IDEs, code quality, and diagram tools |
+| Docs | Wikis, documentation, and knowledge-base tools |
+| Files | File sharing, sync, object storage, and paperless document tools |
+| Management | Docker and infrastructure management dashboards |
+| Media | Media servers, libraries, and download automation |
+| Monitoring | Metrics, uptime, dashboards, logs, and observability |
+| Queue | Message queues, brokers, and workflow engines |
+| Security | Auth, SSO, VPN, and security scanner starters |
+| Automation | Task automation, workflow, and scheduled job tools |
+
+AI subcategories include:
+
+| Subcategory | What it covers |
+| --- | --- |
+| LLM inference | Ollama, Open WebUI, vLLM, Text Generation Inference, LiteLLM, LocalAI, and similar runtime/API stacks |
+| Code assistants | Tabby, OpenHands, Continue, Aider, code-server + Ollama, and code model servers |
+| Personal AI agents | OpenClaw-style chat gateways plus vetted personal agents such as Khoj |
+| Image generation | ComfyUI, InvokeAI, Stable Diffusion Web UI, SD.Next, and LoRA/training tools |
+| Voice / speech | Whisper, Piper, Coqui, MaryTTS, and speech service starters |
+| Vector DB | Qdrant, Weaviate, Chroma, Milvus, LanceDB, pgvector, and related stores |
+| Workflow / RAG | AnythingLLM, Flowise, Langflow, LibreChat, Onyx, DocsGPT, OpenMemory/Mem0, and other orchestration/document tools |
+| Observability | Langfuse and Arize Phoenix for AI traces, prompts, experiments, datasets, and evals |
+| Evals / testing | promptfoo for prompt, model, RAG, agent, and red-team regression tests |
+| Search | Meilisearch, Typesense, OpenSearch, Firecrawl, Crawl4AI, and other search/crawling tools |
+
+Recent AI additions:
+
+| Template ID | Project | Best fit |
+| --- | --- | --- |
+| `librechat` | LibreChat | Multi-user AI chat, agents, MCP, files, and multi-provider routing |
+| `onyx` | Onyx | Enterprise knowledge search/RAG with connectors |
+| `khoj` | Khoj | Personal/team second brain and personal-agent workflows |
+| `docsgpt` | DocsGPT | Private document assistants and enterprise search |
+| `openmemory-mem0` | OpenMemory + Mem0 | Shared memory layer for agents and MCP clients |
+| `langfuse` | Langfuse | LLM observability, prompt management, datasets, and evals |
+| `phoenix` | Arize Phoenix | Lightweight AI tracing, experiments, and evaluations |
+| `promptfoo` | promptfoo | Prompt/RAG/agent tests and red-team regression workflows |
+| `firecrawl` | Firecrawl | Search, scrape, crawl, extract, and agent web context API |
+| `crawl4ai` | Crawl4AI | Local crawler/scraper API for Markdown and RAG extraction |
+
+See [AI Stack Catalog Notes](docs/AI_STACKS.md) for project-specific setup instructions, upstream links, and GPU/resource guidance.
 
 ### Docker Settings
 
