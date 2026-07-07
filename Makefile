@@ -16,6 +16,7 @@ dev-web:
 # Run tests
 test:
 	cd server && go test ./...
+	cd web && npm test
 	bash -n stack-manager.sh
 
 # Cross-compile server for Linux

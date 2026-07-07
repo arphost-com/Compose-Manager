@@ -4,16 +4,17 @@ import "time"
 
 // Project represents a discovered Docker Compose project.
 type Project struct {
-	Name         string              `json:"name"`
-	Dir          string              `json:"dir"`
-	ComposeFile  string              `json:"compose_file"`
-	Inactive     bool                `json:"inactive"`
-	Running      bool                `json:"running"`
-	IsGit        bool                `json:"is_git"`
-	Containers   []Container         `json:"containers,omitempty"`
-	HasHook      map[string]bool     `json:"has_hook,omitempty"`
-	ImageSources []ImageSource       `json:"image_sources,omitempty"`
-	UpdatePolicy ProjectUpdatePolicy `json:"update_policy,omitempty"`
+	Name          string              `json:"name"`
+	Dir           string              `json:"dir"`
+	ComposeFile   string              `json:"compose_file"`
+	Inactive      bool                `json:"inactive"`
+	Running       bool                `json:"running"`
+	IsGit         bool                `json:"is_git"`
+	Containers    []Container         `json:"containers,omitempty"`
+	HasHook       map[string]bool     `json:"has_hook,omitempty"`
+	ImageSources  []ImageSource       `json:"image_sources,omitempty"`
+	Documentation []ProjectDoc        `json:"documentation,omitempty"`
+	UpdatePolicy  ProjectUpdatePolicy `json:"update_policy,omitempty"`
 }
 
 // Container represents a running Docker container.
@@ -37,6 +38,21 @@ type ImageSource struct {
 	Tag          string `json:"tag,omitempty"`
 	Access       string `json:"access,omitempty"`
 	Message      string `json:"message,omitempty"`
+}
+
+// ProjectDoc is a documentation file discovered inside a compose project.
+type ProjectDoc struct {
+	Title     string    `json:"title"`
+	Path      string    `json:"path"`
+	FileName  string    `json:"file_name"`
+	SizeBytes int64     `json:"size_bytes"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ProjectDocContent is the readable contents of a project documentation file.
+type ProjectDocContent struct {
+	Doc     ProjectDoc `json:"doc"`
+	Content string     `json:"content"`
 }
 
 // ProjectUpdatePolicy controls whether Stack Manager should attempt image updates.

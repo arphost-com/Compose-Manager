@@ -134,6 +134,8 @@ func main() {
 			r.Get("/projects", projectHandler.List)
 			r.Get("/projects/{name}", projectHandler.Get)
 			r.Delete("/projects/{name}", projectHandler.Delete)
+			r.Get("/projects/{name}/docs", projectHandler.Docs)
+			r.Get("/projects/{name}/docs/content", projectHandler.DocContent)
 			r.Get("/projects/{name}/images", projectHandler.Images)
 			r.Get("/projects/{name}/status", projectHandler.Status)
 			r.Post("/projects/{name}/pull", projectHandler.Pull)

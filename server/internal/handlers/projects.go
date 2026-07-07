@@ -103,6 +103,34 @@ func (h *ProjectHandler) Images(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Docs returns project-local documentation files.
+func (h *ProjectHandler) Docs(w http.ResponseWriter, r *http.Request) {
+	project, err := h.getProject(w, r)
+	if err != nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, h.Engine.ProjectDocs(project))
+}
+
+// DocContent returns one project-local documentation file.
+func (h *ProjectHandler) DocContent(w http.ResponseWriter, r *http.Request) {
+	project, err := h.getProject(w, r)
+	if err != nil {
+		return
+	}
+	docPath := r.URL.Query().Get("path")
+	content, err := h.Engine.ReadProjectDoc(project, docPath)
+	if err != nil {
+		if _, ok := err.(*core.ErrNotFound); ok {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, content)
+}
+
 // Get returns a single project by name.
 func (h *ProjectHandler) Get(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")

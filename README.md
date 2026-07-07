@@ -137,7 +137,7 @@ docker compose --env-file .env up -d --build
 Open the `HOST_URL` printed by `prepare-state.sh`, usually:
 
 ```bash
-http://<server>:8193
+https://<server>:8993
 ```
 
 For an existing install:
@@ -168,7 +168,7 @@ The dashboard runs as a Docker Compose stack with four services:
 | Service | Port | Purpose |
 |---------|------|---------|
 | `server` | `8192` internal | Go API server |
-| `web` | `${WEB_PORT:-8193}:8080` | React dashboard through nginx |
+| `web` | `${WEB_HTTP_PORT:-8193}:8080` and `${WEB_SSL_PORT:-8993}:8443` | React dashboard through nginx with HTTP redirect/ACME and HTTPS |
 | `mariadb` | internal | Users, action history, project settings |
 | `redis` | internal | Login sessions and cached project/image/job/settings data |
 
@@ -194,8 +194,9 @@ STATE_DIR=.stack-manager
 BACKUP_TARGET_ROOT=.stack-manager/backup-targets
 DOCKER_GID=998
 SERVER_USER=1000:1000
-WEB_PORT=8193
-HOST_URL=http://docker01:8193
+WEB_HTTP_PORT=8193
+WEB_SSL_PORT=8993
+HOST_URL=https://docker01:8993
 ```
 
 Environment reference:
@@ -220,8 +221,9 @@ Environment reference:
 | `BACKUP_TARGET_ROOT` | `.stack-manager/backup-targets` | Host directory mounted into the server container at `/backup-targets` for UI-configured local, CIFS, NFS, and Linux mount backup endpoints. |
 | `DOCKER_GID` | host Docker socket group | Group ID for `/var/run/docker.sock`. The non-root server user is added to this group so it can run Docker commands. |
 | `SERVER_USER` | none | Required numeric UID:GID used to run the server container and own `STATE_DIR`, for example `1000:1000`. Use whichever host user/group should manage Docker. Set `0:0` only on hosts that intentionally require root compose management. |
-| `WEB_PORT` | `8193` | Host port for the web dashboard. The API server stays internal on port `8192`. |
-| `HOST_URL` | detected from hostname and `WEB_PORT` | Dashboard URL printed by setup for the operator. Edit it if users should open a different DNS name or reverse-proxy URL. |
+| `WEB_HTTP_PORT` | `8193` | Host HTTP port for redirects and Let's Encrypt HTTP-01 challenges. Set to `80` for Let's Encrypt. |
+| `WEB_SSL_PORT` | `8993` | Host HTTPS port for the dashboard. Set to `443` for Let's Encrypt. The API server stays internal on port `8192`. |
+| `HOST_URL` | detected from hostname and `WEB_SSL_PORT` | Dashboard URL printed by setup for the operator. Edit it if users should open a different DNS name or reverse-proxy URL. |
 
 `REDIS_DB` is not a MariaDB setting and does not create another Redis container. Redis has numbered logical databases inside one Redis instance; `0` is the normal default. Stack Manager stores login sessions and short-lived cache keys there. With the included dedicated Redis service, leave it at `0`.
 
@@ -234,9 +236,9 @@ Start it:
 docker compose --env-file .env up -d --build
 ```
 
-If `.env` does not exist, `prepare-state.sh` creates it from `.env.example`. It fills missing or `change-me...` values with cryptographically random 36-character, shell-safe values for `API_KEY`, `ADMIN_PASSWORD`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`, and `REDIS_PASSWORD`; generated values include punctuation while avoiding characters that break `.env`, MariaDB DSNs, or Compose parsing. It sets practical defaults for the other settings; writes everything back to `.env`; and prints the resulting settings, including `HOST_URL`. Edit host-specific values such as `DOCKER_ROOT`, `BACKUP_TARGET_ROOT`, `SERVER_USER`, `DOCKER_GID`, `WEB_PORT`, and `HOST_URL` as needed for that box.
+If `.env` does not exist, `prepare-state.sh` creates it from `.env.example`. It fills missing or `change-me...` values with cryptographically random 36-character, shell-safe values for `API_KEY`, `ADMIN_PASSWORD`, `DB_PASSWORD`, `DB_ROOT_PASSWORD`, and `REDIS_PASSWORD`; generated values include punctuation while avoiding characters that break `.env`, MariaDB DSNs, or Compose parsing. It sets practical defaults for the other settings; writes everything back to `.env`; and prints the resulting settings, including `HOST_URL`. Edit host-specific values such as `DOCKER_ROOT`, `BACKUP_TARGET_ROOT`, `SERVER_USER`, `DOCKER_GID`, `WEB_HTTP_PORT`, `WEB_SSL_PORT`, and `HOST_URL` as needed for that box.
 
-Open `http://<host>:8193`. If the MariaDB users table is empty, the first admin is created from `ADMIN_USERNAME` and `ADMIN_PASSWORD`. If `ADMIN_PASSWORD` is unset, the bootstrap password is `API_KEY`; rotate or add users from Settings after first login.
+Open `https://<host>:8993` by default, or the `HOST_URL` printed by setup. If the MariaDB users table is empty, the first admin is created from `ADMIN_USERNAME` and `ADMIN_PASSWORD`. If `ADMIN_PASSWORD` is unset, the bootstrap password is `API_KEY`; rotate or add users from Settings after first login.
 
 The preparation step is recommended on manual installs such as docker01. The Compose stack also runs a short `state-init` service that repairs app-writable state paths before the server starts. If `STATE_DIR` was already created as root, stop the stack and repair app state ownership once:
 

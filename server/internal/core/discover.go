@@ -108,6 +108,7 @@ func (e *Engine) buildProject(dir, composeFile string) Project {
 	p.Running = running
 	p.Containers = containers
 	p.ImageSources = e.ImageSources(&p)
+	p.Documentation = e.ProjectDocs(&p)
 
 	// Detect a .git repo so the UI can show a git pull action.
 	if info, err := os.Stat(filepath.Join(dir, ".git")); err == nil && info.IsDir() {

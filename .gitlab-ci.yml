@@ -12,7 +12,6 @@ variables:
   DEPLOY_PATH: "/home/debian/docker/stack-manager"
   DOCKER_ROOT: "/home/debian/docker"
   STATE_DIR: "/home/debian/docker/stack-manager/.stack-manager"
-  WEB_PORT: "8193"
   WEB_HTTP_PORT: "8193"
   WEB_SSL_PORT: "8993"
   COMPOSE_PROJECT_NAME: "stack-manager"
@@ -39,7 +38,6 @@ validate:compose:
     - export REDIS_PASSWORD="ci-redis-password"
     - export DOCKER_ROOT="${DOCKER_ROOT}"
     - export STATE_DIR="${STATE_DIR}"
-    - export WEB_PORT="${WEB_PORT}"
     - export WEB_HTTP_PORT="${WEB_HTTP_PORT}"
     - export WEB_SSL_PORT="${WEB_SSL_PORT}"
     - export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
@@ -54,7 +52,7 @@ test:server:
 test:web:
   stage: test
   script:
-    - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/.npm -v "$PWD/web:/src" -w /src node:20-alpine sh -lc 'npm ci && npm run build'
+    - docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/.npm -v "$PWD/web:/src" -w /src node:20-alpine sh -lc 'npm ci && npm test && npm run build'
 
 build:images:
   stage: build
@@ -69,7 +67,6 @@ build:images:
     - export REDIS_PASSWORD="ci-redis-password"
     - export DOCKER_ROOT="${DOCKER_ROOT}"
     - export STATE_DIR="${STATE_DIR}"
-    - export WEB_PORT="${WEB_PORT}"
     - export WEB_HTTP_PORT="${WEB_HTTP_PORT}"
     - export WEB_SSL_PORT="${WEB_SSL_PORT}"
     - export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
@@ -153,7 +150,6 @@ security:image_scan:
     - export REDIS_PASSWORD="ci-redis-password"
     - export DOCKER_ROOT="${DOCKER_ROOT}"
     - export STATE_DIR="${STATE_DIR}"
-    - export WEB_PORT="${WEB_PORT}"
     - export WEB_HTTP_PORT="${WEB_HTTP_PORT}"
     - export WEB_SSL_PORT="${WEB_SSL_PORT}"
     - export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
@@ -199,7 +195,7 @@ deploy:docker02:
   resource_group: docker02-stack-manager
   environment:
     name: docker02-dev
-    url: "http://docker02:${WEB_PORT}"
+    url: "https://docker02:${WEB_SSL_PORT}"
   script:
     - export DOCKER_GID="$(stat -c '%g' /var/run/docker.sock)"
     - export SERVICE_UID="$(id -u "${DEPLOY_USER}")"
@@ -217,7 +213,6 @@ deploy:docker02:
         DEPLOY_PATH="${DEPLOY_PATH}" \
         DOCKER_ROOT="${DOCKER_ROOT}" \
         STATE_DIR="${STATE_DIR}" \
-        WEB_PORT="${WEB_PORT}" \
         WEB_HTTP_PORT="${WEB_HTTP_PORT}" \
         WEB_SSL_PORT="${WEB_SSL_PORT}" \
         DOCKER_GID="${DOCKER_GID}" \
@@ -284,7 +279,6 @@ deploy:docker02:
         "REDIS_PASSWORD=${redis_password}" \
         "DOCKER_ROOT=${DOCKER_ROOT}" \
         "STATE_DIR=${STATE_DIR}" \
-        "WEB_PORT=${WEB_PORT}" \
         "WEB_HTTP_PORT=${WEB_HTTP_PORT}" \
         "WEB_SSL_PORT=${WEB_SSL_PORT}" \
         "DOCKER_GID=${DOCKER_GID}" \

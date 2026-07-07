@@ -690,7 +690,7 @@ export default function Dashboard() {
                 <tr key={p.name} className="border-b border-gray-100 align-top">
                   <td className="py-3"><input title={`Select ${p.name} for bulk actions.`} type="checkbox" checked={selected.includes(p.name)} onChange={() => toggleSelected(p.name)} /></td>
                   <td className="py-3">
-                    <Link to={`/projects/${p.name}`} className="font-medium text-blue-700 hover:underline">{p.name}</Link>
+                    <ProjectLinks project={p} />
                     <div className="mt-1 flex gap-1">
                       {p.inactive && <Badge tone="amber">inactive</Badge>}
                       {p.has_hook?.update && <Badge tone="cyan">update hook</Badge>}
@@ -858,7 +858,7 @@ function UpdatesPanel({ projects, pagedProjects, page, pageCount, pageSize, setP
               return (
                 <tr key={project.name} className="border-b border-gray-100 align-top">
                   <td className="py-3">
-                    <Link to={`/projects/${project.name}`} className="font-medium text-blue-700 hover:underline">{project.name}</Link>
+                    <ProjectLinks project={project} />
                     <div className="mt-1 flex flex-wrap gap-1">
                       {project.inactive && <Badge tone="amber">inactive</Badge>}
                       <Badge tone={project.running ? 'green' : 'gray'}>{project.running ? 'running' : 'stopped'}</Badge>
@@ -958,7 +958,7 @@ function BackupsPanel({
                 return (
                   <tr key={project.name} className="border-b border-gray-100">
                     <td className="py-3"><input type="checkbox" checked={selectedProjects.includes(project.name)} onChange={() => toggleProject(project.name)} title={`Select ${project.name} for backup.`} /></td>
-                    <td className="py-3"><Link to={`/projects/${project.name}`} className="font-medium text-blue-700 hover:underline">{project.name}</Link></td>
+                    <td className="py-3"><ProjectLinks project={project} /></td>
                     <td><Badge tone={project.inactive ? 'amber' : project.running ? 'green' : 'gray'}>{project.inactive ? 'inactive' : project.running ? 'running' : 'stopped'}</Badge></td>
                     <td className="text-xs text-gray-500">{lastBackup ? `${formatDate(lastBackup.created_at)} · ${formatBytes(lastBackup.size_bytes)}` : 'none'}</td>
                     <td className="text-right"><button type="button" className="mini-button" onClick={() => runProject(project.name)} title={`Create a backup for ${project.name}.`}>Backup</button></td>
@@ -1227,6 +1227,23 @@ function SourceSummary({ sources }) {
       {custom > 0 && <Badge tone="violet">{custom} custom</Badge>}
       {unknown > 0 && <Badge tone="gray">{unknown} unknown</Badge>}
       {sources.length === 0 && <span className="text-gray-400">not parsed</span>}
+    </div>
+  );
+}
+
+function ProjectLinks({ project }) {
+  const encodedName = encodeURIComponent(project.name);
+  const docCount = project.documentation?.length || 0;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Link to={`/projects/${encodedName}`} className="font-medium text-blue-700 hover:underline">{project.name}</Link>
+      <Link
+        to={`/projects/${encodedName}?tab=docs`}
+        className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-800 hover:bg-blue-100"
+        title="Open project-local documentation."
+      >
+        Docs{docCount > 0 ? ` ${docCount}` : ''}
+      </Link>
     </div>
   );
 }

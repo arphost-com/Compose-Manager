@@ -113,6 +113,8 @@ export const projects = {
   create: (body) => request('/projects', { method: 'POST', body: JSON.stringify(body) }),
   delete: (name, body) => request(`/projects/${name}`, { method: 'DELETE', body: JSON.stringify(body) }),
   get: (name) => request(`/projects/${name}`),
+  docs: (name) => request(`/projects/${encodeURIComponent(name)}/docs`),
+  docContent: (name, path) => request(`/projects/${encodeURIComponent(name)}/docs/content?path=${encodeURIComponent(path)}`),
   images: (name) => request(`/projects/${name}/images`),
   status: (name) => request(`/projects/${name}/status`),
   pull: (name, timeout) => request(`/projects/${name}/pull${timeout ? '?timeout=' + timeout : ''}`, { method: 'POST' }),

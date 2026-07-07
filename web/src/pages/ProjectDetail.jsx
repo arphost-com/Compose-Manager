@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { projects, jobs, debug as debugApi, security, backup, dbadmin, watch as watchApi } from '../api/client';
 
-const TABS = ['overview', 'sessions', 'sources', 'watch', 'logs', 'stats', 'shell', 'security', 'backups', 'databases', 'inspect', 'processes'];
+const TABS = ['overview', 'docs', 'sessions', 'sources', 'watch', 'logs', 'stats', 'shell', 'security', 'backups', 'databases', 'inspect', 'processes'];
 const ACTIONS = [
   { key: 'update', label: 'Update', title: 'Pull and recreate containers, unless an update hook exists.' },
   { key: 'pull', label: 'Pull', title: 'Pull images without restarting containers.' },
@@ -59,6 +59,13 @@ export default function ProjectDetail() {
   }, [location.search]);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('job')) return;
+    const tab = params.get('tab');
+    if (tab && TABS.includes(tab) && tab !== activeTab) loadTab(tab);
+  }, [location.search, name, activeTab]);
+
+  useEffect(() => {
     if (activeTab !== 'logs' || !logOptions.watch) return undefined;
     const id = window.setInterval(() => {
       loadTab('logs');
@@ -74,6 +81,7 @@ export default function ProjectDetail() {
     try {
       let res;
       switch (tab) {
+        case 'docs': res = await projects.docs(name); break;
         case 'sources': res = await projects.images(name); break;
         case 'sessions': res = await jobs.list(); break;
         case 'watch': res = await watchApi.list(name); break;
@@ -261,6 +269,7 @@ export default function ProjectDetail() {
 
         <div className="pt-4">
           {activeTab === 'overview' && <Overview project={project} policyForm={policyForm} setPolicyForm={setPolicyForm} saveUpdatePolicy={saveUpdatePolicy} />}
+          {activeTab === 'docs' && <ProjectDocs docs={tabData || project.documentation || []} projectName={name} />}
 
           {activeTab === 'logs' && (
             <div className="mb-4 flex flex-wrap items-end gap-3">
@@ -352,6 +361,89 @@ function Overview({ project, policyForm, setPolicyForm, saveUpdatePolicy }) {
           </table>
           {(!project.containers || project.containers.length === 0) && <div className="py-6 text-gray-500">No running containers found.</div>}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectDocs({ docs, projectName }) {
+  const availableDocs = Array.isArray(docs) ? docs : [];
+  const [selectedPath, setSelectedPath] = useState('');
+  const [docContent, setDocContent] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (availableDocs.length === 0) {
+      setSelectedPath('');
+      setDocContent(null);
+      return;
+    }
+    if (!selectedPath || !availableDocs.some(doc => doc.path === selectedPath)) {
+      setSelectedPath(availableDocs[0].path);
+    }
+  }, [availableDocs, selectedPath]);
+
+  useEffect(() => {
+    if (!selectedPath) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+    projects.docContent(projectName, selectedPath)
+      .then(res => {
+        if (!cancelled) setDocContent(res.data);
+      })
+      .catch(err => {
+        if (!cancelled) {
+          setError(err.message);
+          setDocContent(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [projectName, selectedPath]);
+
+  if (availableDocs.length === 0) {
+    return (
+      <div className="rounded-md border border-gray-200 p-4 text-sm text-gray-600">
+        No project documentation files were found. Add a README file or Markdown/text files under <code className="rounded bg-gray-100 px-1 py-0.5">docs/</code>, <code className="rounded bg-gray-100 px-1 py-0.5">doc/</code>, or <code className="rounded bg-gray-100 px-1 py-0.5">documentation/</code> inside this project directory.
+      </div>
+    );
+  }
+
+  const selected = availableDocs.find(doc => doc.path === selectedPath);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+      <div className="space-y-2">
+        {availableDocs.map(doc => (
+          <button
+            key={doc.path}
+            type="button"
+            onClick={() => setSelectedPath(doc.path)}
+            className={`block w-full rounded-md border p-3 text-left text-sm ${selectedPath === doc.path ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+            title={`View ${doc.path}`}
+          >
+            <div className="font-medium text-gray-950">{doc.title}</div>
+            <div className="mt-1 break-all font-mono text-xs text-gray-500">{doc.path}</div>
+            <div className="mt-1 text-xs text-gray-500">{formatBytes(doc.size_bytes)} · {formatDate(doc.updated_at)}</div>
+          </button>
+        ))}
+      </div>
+      <div>
+        {selected && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+            <Badge tone="blue">{selected.file_name}</Badge>
+            <span className="break-all font-mono text-xs text-gray-500">{selected.path}</span>
+          </div>
+        )}
+        {loading && <div className="py-8 text-center text-gray-500">Loading documentation...</div>}
+        {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
+        {!loading && !error && (
+          <pre className="max-h-[640px] overflow-auto rounded-md bg-gray-950 p-4 font-mono text-xs leading-6 text-gray-100 whitespace-pre-wrap">{docContent?.content || 'No content.'}</pre>
+        )}
       </div>
     </div>
   );
@@ -598,6 +690,20 @@ function Info({ label, value }) {
   );
 }
 
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatDate(value) {
+  if (!value) return 'unknown';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  return date.toLocaleString();
+}
+
 function Field({ label, title, children }) {
   return (
     <label className="block text-sm">
@@ -656,6 +762,7 @@ function ActionResult({ result, onDismiss }) {
 function tabTitle(tab) {
   const titles = {
     overview: 'Project files and running containers.',
+    docs: 'Project-local README files and docs directory content.',
     sources: 'Classify custom builds, public registry images, and private images.',
     watch: 'Up + Watch: run docker compose up -d then tail the live startup log. Refresh-safe.',
     logs: 'Read docker compose logs with optional container and tail filters.',

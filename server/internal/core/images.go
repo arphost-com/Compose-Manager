@@ -26,9 +26,9 @@ type manifestCacheEntry struct {
 }
 
 var (
-	manifestCacheMu   sync.RWMutex
-	manifestCache     = map[string]manifestCacheEntry{}
-	manifestCacheTTL  = 24 * time.Hour
+	manifestCacheMu  sync.RWMutex
+	manifestCache    = map[string]manifestCacheEntry{}
+	manifestCacheTTL = 24 * time.Hour
 )
 
 func manifestCacheKey(image string, anonymous bool) string {
@@ -74,6 +74,20 @@ func (e *Engine) ImageSources(project *Project) []ImageSource {
 // process for 24 hours (see manifestCache).
 func (e *Engine) CheckImageSources(project *Project) []ImageSource {
 	sources := e.ImageSources(project)
+	return checkImageSourceAccess(sources, imageSourceProbeFuncs{
+		imagePresentLocally:      imagePresentLocally,
+		hasStoredAuthForRegistry: HasStoredAuthForRegistry,
+		manifestInspect:          manifestInspect,
+	})
+}
+
+type imageSourceProbeFuncs struct {
+	imagePresentLocally      func(string) bool
+	hasStoredAuthForRegistry func(string) bool
+	manifestInspect          func(string, bool) (bool, string)
+}
+
+func checkImageSourceAccess(sources []ImageSource, probes imageSourceProbeFuncs) []ImageSource {
 	for i := range sources {
 		if sources[i].SourceType == "custom" {
 			sources[i].Access = "local-build"
@@ -91,17 +105,17 @@ func (e *Engine) CheckImageSources(project *Project) []ImageSource {
 		// tag is present on the host we know the container can start
 		// without contacting the registry, so there is no point spending a
 		// Docker Hub pull just to label the row.
-		if imagePresentLocally(sources[i].Image) {
+		if probes.imagePresentLocally(sources[i].Image) {
 			sources[i].Access = "local"
 			sources[i].Message = "image is already present on this host; no registry call needed"
 			continue
 		}
 
-		if HasStoredAuthForRegistry(sources[i].Registry) {
+		if probes.hasStoredAuthForRegistry(sources[i].Registry) {
 			// Logged in for this registry: authenticated probe is enough,
 			// skip the anonymous call so we do not double-charge the pull
 			// budget just to detect "is this image public".
-			authOK, authMsg := manifestInspect(sources[i].Image, false)
+			authOK, authMsg := probes.manifestInspect(sources[i].Image, false)
 			if authOK {
 				sources[i].Access = "authenticated"
 				sources[i].Message = "registry manifest is reachable with saved credentials"
@@ -115,7 +129,7 @@ func (e *Engine) CheckImageSources(project *Project) []ImageSource {
 		// No stored auth for this registry, so an anonymous check is the
 		// only signal we have. On success we know it is public; on failure
 		// the user needs to log in.
-		anonymousOK, anonymousMsg := manifestInspect(sources[i].Image, true)
+		anonymousOK, anonymousMsg := probes.manifestInspect(sources[i].Image, true)
 		if anonymousOK {
 			sources[i].Access = "public"
 			sources[i].Message = "registry manifest is reachable without credentials"
