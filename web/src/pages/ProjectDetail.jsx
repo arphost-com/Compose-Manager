@@ -11,6 +11,33 @@ const ACTIONS = [
   { key: 'down', label: 'Stop', title: 'Run docker compose down.' },
 ];
 
+const updateBlockedReason = (project) => {
+  if (project.update_policy?.effective_policy === 'no_updates') return project.update_policy?.no_updates_reason || 'Updates are disabled for this project.';
+  if (!project.update_status?.checked) return 'No update check has run yet.';
+  if (!project.update_status?.available) return 'No image updates were available at the last check.';
+  return '';
+};
+
+const canRunImageUpdate = (project) => updateBlockedReason(project) === '';
+
+const updateStatusLabel = (project) => {
+  const status = project.update_status || {};
+  if (project.update_policy?.effective_policy === 'no_updates') return 'disabled';
+  if (!status.checked) return 'not checked';
+  if (status.available) return `${status.count || 1} available`;
+  if (status.error) return 'check warning';
+  return 'current';
+};
+
+const updateStatusTone = (project) => {
+  const status = project.update_status || {};
+  if (project.update_policy?.effective_policy === 'no_updates') return 'amber';
+  if (!status.checked) return 'gray';
+  if (status.available) return 'green';
+  if (status.error) return 'amber';
+  return 'gray';
+};
+
 export default function ProjectDetail() {
   const { name } = useParams();
   const location = useLocation();
@@ -206,6 +233,7 @@ export default function ProjectDetail() {
             {project.inactive && <Badge tone="amber">inactive</Badge>}
             {project.has_hook?.update && <Badge tone="cyan">update hook</Badge>}
             {project.update_policy?.effective_policy === 'no_updates' && <Badge tone="amber">no updates</Badge>}
+            <Badge tone={updateStatusTone(project)}>{updateStatusLabel(project)}</Badge>
           </div>
           <p className="mt-1 font-mono text-xs text-gray-500">{project.dir}</p>
         </div>
@@ -223,11 +251,13 @@ export default function ProjectDetail() {
 
       <div className="section-panel">
         <div className="flex flex-wrap gap-2">
-          {ACTIONS.map(action => (
-            <button key={action.key} title={action.key === 'update' && project.update_policy?.effective_policy === 'no_updates' ? 'Updates are disabled for this project; clicking records a skipped session.' : action.title} onClick={() => runAction(action.key)} className={action.key === 'down' ? 'btn-danger' : 'btn-secondary'}>
+          {ACTIONS.map(action => {
+            const imageActionBlocked = (action.key === 'update' || action.key === 'pull') && !canRunImageUpdate(project);
+            return (
+            <button key={action.key} disabled={imageActionBlocked} title={imageActionBlocked ? updateBlockedReason(project) : action.title} onClick={() => runAction(action.key)} className={`${action.key === 'down' ? 'btn-danger' : 'btn-secondary'} ${imageActionBlocked ? 'opacity-50' : ''}`}>
               {action.label}
             </button>
-          ))}
+          )})}
           <select title="Optional backup endpoint to copy the backup to after it is created locally." value={backupDestinationId} onChange={e => setBackupDestinationId(e.target.value)} className="input max-w-[220px]">
             <option value="">Local only</option>
             {backupDestinations.filter(d => d.enabled).map(d => <option key={d.id} value={d.id}>{d.name} ({d.type})</option>)}
@@ -319,7 +349,22 @@ function Overview({ project, policyForm, setPolicyForm, saveUpdatePolicy }) {
       <div className="grid gap-3 md:grid-cols-2">
         <Info label="Compose file" value={project.compose_file} />
         <Info label="Directory" value={project.dir} />
+        <Info label="Update status" value={updateStatusLabel(project)} />
+        <Info label="Last update check" value={project.update_status?.checked_at ? formatDate(project.update_status.checked_at) : 'never'} />
       </div>
+      {project.update_status?.images?.some(check => check.update_available) && (
+        <div className="rounded-md border border-green-200 bg-green-50 p-4">
+          <h2 className="text-sm font-semibold text-green-950">Available image updates</h2>
+          <div className="mt-2 space-y-2 text-xs">
+            {project.update_status.images.filter(check => check.update_available).map(check => (
+              <div key={`${check.service}:${check.image}`}>
+                <div className="font-medium text-green-950">{check.service}</div>
+                <div className="break-all font-mono text-green-800">{check.image}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <form onSubmit={saveUpdatePolicy} className="rounded-md border border-gray-200 p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="grid flex-1 gap-3 md:grid-cols-[220px_1fr]">

@@ -122,6 +122,20 @@ func (s *Store) Migrate(ctx context.Context) error {
 			created_at DATETIME(6) NOT NULL,
 			updated_at DATETIME(6) NOT NULL
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+		`CREATE TABLE IF NOT EXISTS image_update_checks (
+			project_name VARCHAR(255) NOT NULL,
+			service VARCHAR(255) NOT NULL,
+			image VARCHAR(1024) NOT NULL,
+			local_digest VARCHAR(255) NOT NULL DEFAULT '',
+			remote_digest VARCHAR(255) NOT NULL DEFAULT '',
+			status VARCHAR(64) NOT NULL,
+			update_available BOOLEAN NOT NULL DEFAULT FALSE,
+			error TEXT NULL,
+			checked_at DATETIME(6) NOT NULL,
+			PRIMARY KEY (project_name, service),
+			INDEX idx_image_update_checks_available (update_available),
+			INDEX idx_image_update_checks_checked_at (checked_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 		`CREATE TABLE IF NOT EXISTS compose_agents (
 			id BIGINT AUTO_INCREMENT PRIMARY KEY,
 			name VARCHAR(128) NOT NULL UNIQUE,
@@ -1207,6 +1221,94 @@ func scanJob(scanner jobScanner) (*core.ActionJob, error) {
 		job.Error = errText.String
 	}
 	return &job, nil
+}
+
+func (s *Store) SaveProjectUpdateStatus(ctx context.Context, projectName string, status core.ProjectUpdateStatus) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM image_update_checks WHERE project_name=?`, projectName); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if len(status.Images) > 0 {
+		stmt, err := tx.PrepareContext(ctx, `INSERT INTO image_update_checks
+			(project_name, service, image, local_digest, remote_digest, status, update_available, error, checked_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		if err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		defer stmt.Close()
+		for _, image := range status.Images {
+			if _, err := stmt.ExecContext(ctx,
+				projectName, image.Service, image.Image, image.LocalDigest, image.RemoteDigest, image.Status,
+				image.UpdateAvailable, nullableString(image.Error), image.CheckedAt.UTC(),
+			); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.DeleteCache(ctx, "project_updates:"+projectName, "projects:list")
+	return nil
+}
+
+func (s *Store) ProjectUpdateStatus(ctx context.Context, projectName string) (core.ProjectUpdateStatus, error) {
+	var cached core.ProjectUpdateStatus
+	if s.GetJSON(ctx, "project_updates:"+projectName, &cached) {
+		return cached, nil
+	}
+	rows, err := s.DB.QueryContext(ctx, `SELECT project_name, service, image, local_digest, remote_digest, status, update_available, error, checked_at
+		FROM image_update_checks
+		WHERE project_name=?
+		ORDER BY service`, projectName)
+	if err != nil {
+		return core.ProjectUpdateStatus{}, err
+	}
+	defer rows.Close()
+
+	status := core.ProjectUpdateStatus{}
+	var latest *time.Time
+	for rows.Next() {
+		var check core.ImageUpdateCheck
+		var errText sql.NullString
+		if err := rows.Scan(&check.Project, &check.Service, &check.Image, &check.LocalDigest, &check.RemoteDigest, &check.Status, &check.UpdateAvailable, &errText, &check.CheckedAt); err != nil {
+			return core.ProjectUpdateStatus{}, err
+		}
+		if errText.Valid {
+			check.Error = errText.String
+		}
+		status.Checked = true
+		status.RegistryImages++
+		status.Images = append(status.Images, check)
+		if check.UpdateAvailable {
+			status.Available = true
+			status.Count++
+		}
+		if check.Error != "" && status.Error == "" {
+			status.Error = check.Error
+		}
+		t := check.CheckedAt.UTC()
+		if latest == nil || t.After(*latest) {
+			cp := t
+			latest = &cp
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return core.ProjectUpdateStatus{}, err
+	}
+	if latest != nil {
+		status.CheckedAt = latest
+		next := latest.Add(24 * time.Hour)
+		status.NextCheckAt = &next
+	}
+	s.SetJSON(ctx, "project_updates:"+projectName, status, s.CacheTTL)
+	return status, nil
 }
 
 func nullableString(value string) interface{} {

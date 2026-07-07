@@ -129,6 +129,10 @@ export const projects = {
   bulk: (action, body) => request(`/projects/bulk/${action}`, { method: 'POST', body: JSON.stringify(body) }),
 };
 
+export const updates = {
+  check: () => request('/updates/check', { method: 'POST' }),
+};
+
 export const jobs = {
   list: () => request('/jobs'),
   get: (id) => request(`/jobs/${id}`),

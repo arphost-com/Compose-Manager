@@ -86,11 +86,9 @@ func (e *Engine) ExecCompose(project *Project, args ...string) *OpResult {
 func (e *Engine) ExecComposeWithTimeout(project *Project, timeoutSecs int, args ...string) *OpResult {
 	pname := e.getProjectName(project.Name)
 
-	composeArgs := []string{
-		"compose",
-		"-f", project.ComposeFile,
-		"-p", pname,
-	}
+	composeArgs := []string{"compose"}
+	composeArgs = append(composeArgs, composeFileArgs(project)...)
+	composeArgs = append(composeArgs, "-p", pname)
 	composeArgs = append(composeArgs, args...)
 
 	var ctx context.Context
@@ -106,6 +104,7 @@ func (e *Engine) ExecComposeWithTimeout(project *Project, timeoutSecs int, args 
 	cmd := exec.CommandContext(ctx, "docker", composeArgs...)
 	cmd.Dir = project.Dir
 	cmd.Env = append(cmd.Environ(), "COMPOSE_PROGRESS=plain")
+	cmd.Env = append(cmd.Env, stackManagerUserEnv(project)...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

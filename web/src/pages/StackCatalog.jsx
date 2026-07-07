@@ -77,6 +77,8 @@ const SUBCATEGORY_ORDER = [
   'search',
 ];
 
+const PAGE_SIZES = [24, 48, 96, 199];
+
 function labelForCategory(cat) {
   return CATEGORY_LABELS[cat] || (cat ? cat.charAt(0).toUpperCase() + cat.slice(1) : cat);
 }
@@ -85,7 +87,7 @@ function labelForSubcategory(sub) {
   return SUBCATEGORY_LABELS[sub] || sub;
 }
 
-const EMPTY_FORM = { name: '', compose_content: '', env_content: '', inactive: false, overwrite: false };
+const EMPTY_FORM = { name: '', compose_content: '', env_content: '', run_as_uid: '', run_as_gid: '', enforce_user: true, inactive: false, overwrite: false };
 
 export default function StackCatalog() {
   const navigate = useNavigate();
@@ -93,6 +95,8 @@ export default function StackCatalog() {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [subcategory, setSubcategory] = useState('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(24);
   const [message, setMessage] = useState(null);
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -111,6 +115,7 @@ export default function StackCatalog() {
 
   useEffect(() => { load(); }, []);
   useEffect(() => { setSubcategory('all'); }, [category]);
+  useEffect(() => { setPage(1); }, [query, category, subcategory, pageSize]);
   useEffect(() => {
     if (!selected) return;
     const onKey = (event) => { if (event.key === 'Escape') closeModal(); };
@@ -155,6 +160,11 @@ export default function StackCatalog() {
     if (!q) return true;
     return [template.name, template.description, template.category, template.subcategory, ...(template.tags || [])].filter(Boolean).join(' ').toLowerCase().includes(q);
   });
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const start = filtered.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const end = Math.min(filtered.length, safePage * pageSize);
+  const pagedTemplates = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const openTemplate = (template) => {
     setSelected(template);
@@ -162,6 +172,9 @@ export default function StackCatalog() {
       name: template.id,
       compose_content: template.compose_content,
       env_content: template.env_content || '',
+      run_as_uid: '',
+      run_as_gid: '',
+      enforce_user: true,
       inactive: false,
       overwrite: false,
     });
@@ -206,7 +219,7 @@ export default function StackCatalog() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-950">Stack Catalog</h1>
-          <p className="text-sm text-gray-600">Click a stack to open the editor, review the compose.yml + .env, then Spin it Up.</p>
+          <p className="text-sm text-gray-600">{templates.length} apps across {Math.max(0, categories.length - 1)} categories. Click a stack to review compose.yml + .env, then Spin it Up.</p>
         </div>
         <button onClick={load} className="btn-secondary" title="Reload the built-in stack catalog.">Refresh</button>
       </div>
@@ -266,8 +279,20 @@ export default function StackCatalog() {
         )}
       </div>
 
+      <CatalogPager
+        total={templates.length}
+        filtered={filtered.length}
+        start={start}
+        end={end}
+        page={safePage}
+        pageCount={pageCount}
+        pageSize={pageSize}
+        setPage={setPage}
+        setPageSize={setPageSize}
+      />
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        {filtered.map(template => (
+        {pagedTemplates.map(template => (
           <button key={template.id} type="button" onClick={() => openTemplate(template)} className="min-w-0 rounded-md border border-gray-200 bg-white p-4 text-left text-sm shadow-sm hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200" title={`${template.name} — click to open the editor and spin it up.`}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
@@ -287,6 +312,20 @@ export default function StackCatalog() {
         ))}
         {filtered.length === 0 && <div className="py-12 text-center text-sm text-gray-500 md:col-span-2 xl:col-span-3 2xl:col-span-4">No templates match the current filters.</div>}
       </div>
+
+      {filtered.length > pageSize && (
+        <CatalogPager
+          total={templates.length}
+          filtered={filtered.length}
+          start={start}
+          end={end}
+          page={safePage}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          setPage={setPage}
+          setPageSize={setPageSize}
+        />
+      )}
 
       {selected && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-gray-950/60 p-4" onClick={closeModal} role="dialog" aria-modal="true">
@@ -318,6 +357,20 @@ export default function StackCatalog() {
                   Overwrite existing
                 </label>
               </div>
+              <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+                <label className="block text-sm" title="Container user UID written to STACK_UID/PUID/UID/USER_UID. Leave blank to use the Stack Manager server user.">
+                  <span className="mb-1 block font-medium text-gray-700">Run UID</span>
+                  <input disabled={submitting} value={form.run_as_uid} onChange={e => setForm({ ...form, run_as_uid: e.target.value })} className="input" placeholder="auto" inputMode="numeric" />
+                </label>
+                <label className="block text-sm" title="Container group GID written to STACK_GID/PGID/GID/USER_GID. Leave blank to use the Stack Manager server group.">
+                  <span className="mb-1 block font-medium text-gray-700">Run GID</span>
+                  <input disabled={submitting} value={form.run_as_gid} onChange={e => setForm({ ...form, run_as_gid: e.target.value })} className="input" placeholder="auto" inputMode="numeric" />
+                </label>
+                <label className="flex items-end gap-2 pb-2 text-sm text-gray-700" title="Generate compose.override.yml so every service runs as the UID/GID above. Edit that file or .env later for stack-specific users.">
+                  <input type="checkbox" disabled={submitting} checked={form.enforce_user} onChange={e => setForm({ ...form, enforce_user: e.target.checked })} />
+                  Apply to services
+                </label>
+              </div>
               <label className="block text-sm" title="Editable compose.yml before creation.">
                 <span className="mb-1 block font-medium text-gray-700">compose.yml</span>
                 <textarea disabled={submitting} required className="textarea h-72 font-mono" value={form.compose_content} onChange={e => setForm({ ...form, compose_content: e.target.value })} />
@@ -336,6 +389,27 @@ export default function StackCatalog() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CatalogPager({ total, filtered, start, end, page, pageCount, pageSize, setPage, setPageSize }) {
+  return (
+    <div className="section-panel flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-gray-600">
+        Showing <span className="font-medium text-gray-950">{start}-{end}</span> of <span className="font-medium text-gray-950">{filtered}</span> filtered apps
+        {filtered !== total && <span> from {total} total</span>}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="input max-w-[130px]" value={pageSize} onChange={e => setPageSize(Number(e.target.value))} title="Apps per page.">
+          {PAGE_SIZES.map(size => <option key={size} value={size}>{size} apps</option>)}
+        </select>
+        <button type="button" className="mini-button" disabled={page <= 1} onClick={() => setPage(1)} title="First page.">First</button>
+        <button type="button" className="mini-button" disabled={page <= 1} onClick={() => setPage(page - 1)} title="Previous page.">Prev</button>
+        <span className="text-xs text-gray-500">Page {page} of {pageCount}</span>
+        <button type="button" className="mini-button" disabled={page >= pageCount} onClick={() => setPage(page + 1)} title="Next page.">Next</button>
+        <button type="button" className="mini-button" disabled={page >= pageCount} onClick={() => setPage(pageCount)} title="Last page.">Last</button>
+      </div>
     </div>
   );
 }

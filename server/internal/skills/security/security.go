@@ -199,8 +199,9 @@ func auditComposeConfig(project *core.Project) []core.SecurityFinding {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "docker", "compose", "-f", project.ComposeFile, "config")
+	cmd := exec.CommandContext(ctx, "docker", core.ComposeCommandArgs(project, "config")...)
 	cmd.Dir = project.Dir
+	cmd.Env = append(cmd.Environ(), core.ComposeUserEnv(project)...)
 	out, err := cmd.Output()
 	if err != nil {
 		return findings

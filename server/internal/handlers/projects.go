@@ -14,14 +14,19 @@ import (
 
 // ProjectHandler handles all project-related API endpoints.
 type ProjectHandler struct {
-	Engine *core.Engine
-	Jobs   *core.JobManager
-	Store  *storage.Store
+	Engine       *core.Engine
+	Jobs         *core.JobManager
+	Store        *storage.Store
+	UpdateChecks *core.UpdateCheckManager
 }
 
 // NewProjectHandler creates a new ProjectHandler.
 func NewProjectHandler(engine *core.Engine, jobs *core.JobManager, store *storage.Store) *ProjectHandler {
 	return &ProjectHandler{Engine: engine, Jobs: jobs, Store: store}
+}
+
+func (h *ProjectHandler) SetUpdateCheckManager(manager *core.UpdateCheckManager) {
+	h.UpdateChecks = manager
 }
 
 // Create creates a new compose project under the configured root.
@@ -276,6 +281,17 @@ func (h *ProjectHandler) SetUpdatePolicy(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, policy)
 }
 
+// CheckUpdates refreshes cached image update availability for active projects.
+func (h *ProjectHandler) CheckUpdates(w http.ResponseWriter, r *http.Request) {
+	if h.UpdateChecks == nil {
+		writeError(w, http.StatusServiceUnavailable, "update checker is not configured")
+		return
+	}
+	status := h.UpdateChecks.Run(r.Context())
+	h.Store.DeleteCache(r.Context(), "projects:list")
+	writeJSON(w, http.StatusOK, status)
+}
+
 // GetJob returns a tracked compose action with its current or completed output.
 func (h *ProjectHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "jobId")
@@ -491,6 +507,9 @@ func (h *ProjectHandler) applyPolicy(project *core.Project) {
 		return
 	}
 	project.UpdatePolicy = h.Store.ResolveUpdatePolicy(*project)
+	if status, err := h.Store.ProjectUpdateStatus(context.Background(), project.Name); err == nil {
+		project.UpdateStatus = status
+	}
 }
 
 func (h *ProjectHandler) noUpdates(project *core.Project) bool {

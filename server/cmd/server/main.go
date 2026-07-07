@@ -51,9 +51,11 @@ func main() {
 	jobs := core.NewJobManager(appStore)
 	scheduler := core.NewScheduleManager(engine, jobs, appStore)
 	metricsCollector := core.NewMetricsCollector(engine, appStore, cfg.MetricsInterval, cfg.WarmCacheTTL)
+	updateChecker := core.NewUpdateCheckManager(engine, appStore)
 	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
 	scheduler.Start(schedulerCtx)
 	metricsCollector.Start(schedulerCtx)
+	updateChecker.Start(schedulerCtx)
 	userStore, err := cmauth.NewStore(appStore, cfg.AdminUsername, cfg.AdminPassword)
 	if err != nil {
 		log.Fatalf("users init: %v", err)
@@ -80,6 +82,7 @@ func main() {
 
 	// Handlers
 	projectHandler := handlers.NewProjectHandler(engine, jobs, appStore)
+	projectHandler.SetUpdateCheckManager(updateChecker)
 	agentHandler := handlers.NewAgentHandler(appStore)
 	scheduleHandler := handlers.NewScheduleHandler(appStore, scheduler)
 	metricsHandler := handlers.NewMetricsHandler(appStore, metricsCollector)
@@ -158,6 +161,7 @@ func main() {
 
 			// Bulk operations
 			r.Post("/projects/bulk/{action}", projectHandler.BulkAction)
+			r.Post("/updates/check", projectHandler.CheckUpdates)
 
 			// System
 			r.Post("/prune", projectHandler.Prune)
@@ -232,6 +236,7 @@ func main() {
 
 	stopScheduler()
 	metricsCollector.Stop()
+	updateChecker.Stop()
 	registry.ShutdownAll(shutCtx)
 	srv.Shutdown(shutCtx)
 	log.Println("server stopped")

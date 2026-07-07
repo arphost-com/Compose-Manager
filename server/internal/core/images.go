@@ -145,8 +145,12 @@ func readComposeImageSources(project *Project) ([]ImageSource, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "docker", "compose", "-f", project.ComposeFile, "config", "--format", "json")
+	args := []string{"compose"}
+	args = append(args, composeFileArgs(project)...)
+	args = append(args, "config", "--format", "json")
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = project.Dir
+	cmd.Env = append(cmd.Environ(), stackManagerUserEnv(project)...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

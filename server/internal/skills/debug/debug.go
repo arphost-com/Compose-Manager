@@ -341,9 +341,11 @@ func runGitCommand(project *core.Project, timeout time.Duration, args ...string)
 func runComposeShellCommand(project *core.Project, timeout time.Duration, args ...string) (string, int) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	composeArgs := append([]string{"compose", "-f", project.ComposeFile}, args...)
+	composeArgs := core.ComposeCommandArgs(project, args...)
 	cmd := exec.CommandContext(ctx, "docker", composeArgs...)
 	cmd.Dir = project.Dir
+	cmd.Env = append(cmd.Environ(), "COMPOSE_PROGRESS=plain")
+	cmd.Env = append(cmd.Env, core.ComposeUserEnv(project)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

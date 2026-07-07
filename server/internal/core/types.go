@@ -15,6 +15,7 @@ type Project struct {
 	ImageSources  []ImageSource       `json:"image_sources,omitempty"`
 	Documentation []ProjectDoc        `json:"documentation,omitempty"`
 	UpdatePolicy  ProjectUpdatePolicy `json:"update_policy,omitempty"`
+	UpdateStatus  ProjectUpdateStatus `json:"update_status,omitempty"`
 }
 
 // Container represents a running Docker container.
@@ -70,11 +71,40 @@ type ProjectUpdatePolicy struct {
 	DetectedReason     string `json:"detected_reason,omitempty"`
 }
 
+// ProjectUpdateStatus is the last known registry image update result for a project.
+type ProjectUpdateStatus struct {
+	Checked         bool               `json:"checked"`
+	Available       bool               `json:"available"`
+	Count           int                `json:"count"`
+	CheckedAt       *time.Time         `json:"checked_at,omitempty"`
+	NextCheckAt     *time.Time         `json:"next_check_at,omitempty"`
+	Error           string             `json:"error,omitempty"`
+	Images          []ImageUpdateCheck `json:"images,omitempty"`
+	RegistryImages  int                `json:"registry_images"`
+	SkippedServices int                `json:"skipped_services"`
+}
+
+// ImageUpdateCheck records local-vs-remote digest state for one compose service image.
+type ImageUpdateCheck struct {
+	Project         string    `json:"project"`
+	Service         string    `json:"service"`
+	Image           string    `json:"image"`
+	LocalDigest     string    `json:"local_digest,omitempty"`
+	RemoteDigest    string    `json:"remote_digest,omitempty"`
+	Status          string    `json:"status"`
+	UpdateAvailable bool      `json:"update_available"`
+	Error           string    `json:"error,omitempty"`
+	CheckedAt       time.Time `json:"checked_at"`
+}
+
 // CreateProjectRequest creates a compose project folder under the configured root.
 type CreateProjectRequest struct {
 	Name           string `json:"name"`
 	ComposeContent string `json:"compose_content"`
 	EnvContent     string `json:"env_content,omitempty"`
+	RunAsUID       string `json:"run_as_uid,omitempty"`
+	RunAsGID       string `json:"run_as_gid,omitempty"`
+	EnforceUser    *bool  `json:"enforce_user,omitempty"`
 	Inactive       bool   `json:"inactive,omitempty"`
 	Overwrite      bool   `json:"overwrite,omitempty"`
 }

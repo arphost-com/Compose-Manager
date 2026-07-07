@@ -227,7 +227,9 @@ func runUpdateJob(engine *Engine, project *Project, job *ActionJob, timeoutSecs 
 
 func runComposeJob(engine *Engine, project *Project, job *ActionJob, timeoutSecs int, args ...string) (bool, int) {
 	pname := engine.getProjectName(project.Name)
-	composeArgs := []string{"compose", "-f", project.ComposeFile, "-p", pname}
+	composeArgs := []string{"compose"}
+	composeArgs = append(composeArgs, composeFileArgs(project)...)
+	composeArgs = append(composeArgs, "-p", pname)
 	composeArgs = append(composeArgs, args...)
 	return runCommandJob(job, project.Dir, timeoutSecs, "docker", composeArgs...)
 }
@@ -244,6 +246,9 @@ func runCommandJob(job *ActionJob, dir string, timeoutSecs int, name string, arg
 	cmd := exec.CommandContext(ctx, name, args...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd.Dir = dir
 	cmd.Env = append(cmd.Environ(), "COMPOSE_PROGRESS=plain")
+	if job != nil && job.Project != "" {
+		cmd.Env = append(cmd.Env, stackManagerUserEnv(&Project{Name: job.Project, Dir: dir})...)
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { projects, jobs, skills as skillsApi, system, registries, agents as agentsApi, schedules as schedulesApi, metrics as metricsApi, backup as backupApi } from '../api/client';
+import { projects, jobs, skills as skillsApi, system, registries, agents as agentsApi, schedules as schedulesApi, metrics as metricsApi, backup as backupApi, updates as updatesApi } from '../api/client';
 
 // Client-side snapshot cache so the Dashboard paints the last-known state
 // immediately on mount, then refreshes in the background. Keyed by the
 // filter combo so include-inactive / running-only don't leak into each other.
-const SNAPSHOT_VERSION = 1;
+const SNAPSHOT_VERSION = 2;
 const snapshotKey = (filters) => `cm_dashboard_v${SNAPSHOT_VERSION}_${filters.includeInactive ? 1 : 0}_${filters.runningOnly ? 1 : 0}`;
 const readSnapshot = (filters) => {
   try {
@@ -35,6 +35,33 @@ const PRUNE_MODES = [
   { key: 'builder', label: 'Builder cache --all', title: 'Remove Docker build cache.' },
 ];
 
+const updateBlockedReason = (project) => {
+  if (project.update_policy?.effective_policy === 'no_updates') return project.update_policy?.no_updates_reason || 'Updates are disabled for this project.';
+  if (!project.update_status?.checked) return 'No update check has run yet.';
+  if (!project.update_status?.available) return 'No image updates were available at the last check.';
+  return '';
+};
+
+const canRunImageUpdate = (project) => updateBlockedReason(project) === '';
+
+const updateStatusLabel = (project) => {
+  const status = project.update_status || {};
+  if (project.update_policy?.effective_policy === 'no_updates') return 'disabled';
+  if (!status.checked) return 'not checked';
+  if (status.available) return `${status.count || 1} available`;
+  if (status.error) return 'check warning';
+  return 'current';
+};
+
+const updateStatusTone = (project) => {
+  const status = project.update_status || {};
+  if (project.update_policy?.effective_policy === 'no_updates') return 'amber';
+  if (!status.checked) return 'gray';
+  if (status.available) return 'green';
+  if (status.error) return 'amber';
+  return 'gray';
+};
+
 export default function Dashboard() {
   // Initial state hydrates from localStorage snapshot when one exists so
   // the page paints instantly on a return visit.
@@ -52,6 +79,7 @@ export default function Dashboard() {
   const [mainTab, setMainTab] = useState('projects');
   const [loading, setLoading] = useState(!initialSnapshot);
   const [refreshing, setRefreshing] = useState(false);
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
   // Tracks in-flight actions so the specific button that was clicked can show
   // a spinner and disabled state instead of leaving the user guessing.
   // Keys: `${project}:${action}` for per-row; `bulk:${action}` for bulk bar.
@@ -77,6 +105,9 @@ export default function Dashboard() {
     name: '',
     compose_content: 'services:\n  app:\n    image: nginx:stable\n    restart: unless-stopped\n',
     env_content: '',
+    run_as_uid: '',
+    run_as_gid: '',
+    enforce_user: true,
     inactive: false,
     overwrite: false,
   });
@@ -198,9 +229,10 @@ export default function Dashboard() {
   const noUpdates = projectList.filter(p => p.update_policy?.effective_policy === 'no_updates').length;
   const customServices = projectList.reduce((sum, p) => sum + (p.image_sources || []).filter(s => s.source_type === 'custom').length, 0);
   const registryServices = projectList.reduce((sum, p) => sum + (p.image_sources || []).filter(s => s.source_type === 'registry').length, 0);
-  const updatePageCount = Math.max(1, Math.ceil(projectList.length / updatePageSize));
+  const availableUpdateProjects = projectList.filter(canRunImageUpdate);
+  const updatePageCount = Math.max(1, Math.ceil(availableUpdateProjects.length / updatePageSize));
   const updatePageSafe = Math.min(updatePage, updatePageCount);
-  const pagedUpdateProjects = projectList.slice((updatePageSafe - 1) * updatePageSize, updatePageSafe * updatePageSize);
+  const pagedUpdateProjects = availableUpdateProjects.slice((updatePageSafe - 1) * updatePageSize, updatePageSafe * updatePageSize);
 
   const setSummaryFilter = (filter) => {
     setQuickFilter(filter);
@@ -247,7 +279,13 @@ export default function Dashboard() {
 
   const runBulk = async (action) => {
     const key = `bulk:${action}`;
-    const targets = selected.length > 0 ? selected : filteredProjects.map(p => p.name);
+    const targetProjects = selected.length > 0 ? projectList.filter(p => selected.includes(p.name)) : filteredProjects;
+    const runnableTargets = action === 'update' || action === 'pull' ? targetProjects.filter(canRunImageUpdate) : targetProjects;
+    const targets = runnableTargets.map(p => p.name);
+    if (targets.length === 0) {
+      setActionResult({ label: `bulk ${action}`, status: 'error', error: action === 'update' || action === 'pull' ? 'No checked projects have available updates.' : 'No projects selected.' });
+      return;
+    }
     markPending(key, true);
     try {
       setActionResult({ label: `${action} ${targets.length} project${targets.length === 1 ? '' : 's'}`, status: 'running' });
@@ -259,6 +297,20 @@ export default function Dashboard() {
       setActionResult({ label: `bulk ${action}`, status: 'error', error: err.message });
     } finally {
       markPending(key, false);
+    }
+  };
+
+  const checkUpdates = async () => {
+    setCheckingUpdates(true);
+    try {
+      setActionResult({ label: 'check updates', status: 'running' });
+      const res = await updatesApi.check();
+      setActionResult({ label: 'check updates', status: 'done', result: res.data });
+      await fetchData({ background: true });
+    } catch (err) {
+      setActionResult({ label: 'check updates', status: 'error', error: err.message });
+    } finally {
+      setCheckingUpdates(false);
     }
   };
 
@@ -585,7 +637,7 @@ export default function Dashboard() {
       <div className="section-panel">
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setMainTab('projects')} className={mainTab === 'projects' ? 'btn-primary' : 'btn-secondary'} title="Show project discovery, filters, and compose actions.">Projects</button>
-          <button type="button" onClick={() => setMainTab('updates')} className={mainTab === 'updates' ? 'btn-primary' : 'btn-secondary'} title="Show every project and its update policy.">Updates</button>
+          <button type="button" onClick={() => setMainTab('updates')} className={mainTab === 'updates' ? 'btn-primary' : availableUpdateProjects.length > 0 ? 'btn-secondary' : 'btn-secondary opacity-60'} title={availableUpdateProjects.length > 0 ? 'Show projects with available image updates.' : 'No checked projects have available updates.'}>Updates {availableUpdateProjects.length > 0 ? `(${availableUpdateProjects.length})` : ''}</button>
           <button type="button" onClick={() => setMainTab('backups')} className={mainTab === 'backups' ? 'btn-primary' : 'btn-secondary'} title="Run and schedule backups across projects.">Backups</button>
           <button type="button" onClick={() => setMainTab('system')} className={mainTab === 'system' ? 'btn-primary' : 'btn-secondary'} title="Show system health, enabled modules, and historical host statistics.">System Status</button>
         </div>
@@ -615,6 +667,18 @@ export default function Dashboard() {
               <Field label="Project name" title="Folder name under the configured root. Use letters, numbers, dots, underscores, or hyphens.">
                 <input required value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })} className="input" placeholder="example-stack" />
               </Field>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Run UID" title="Container user UID written to STACK_UID/PUID/UID/USER_UID. Leave blank to use the Stack Manager server user.">
+                  <input value={createForm.run_as_uid} onChange={e => setCreateForm({ ...createForm, run_as_uid: e.target.value })} className="input" placeholder="auto" inputMode="numeric" />
+                </Field>
+                <Field label="Run GID" title="Container group GID written to STACK_GID/PGID/GID/USER_GID. Leave blank to use the Stack Manager server group.">
+                  <input value={createForm.run_as_gid} onChange={e => setCreateForm({ ...createForm, run_as_gid: e.target.value })} className="input" placeholder="auto" inputMode="numeric" />
+                </Field>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-gray-700" title="Generate compose.override.yml so every service runs as the UID/GID above. Edit that file or .env later for stack-specific users.">
+                <input type="checkbox" checked={createForm.enforce_user} onChange={e => setCreateForm({ ...createForm, enforce_user: e.target.checked })} />
+                Apply to services
+              </label>
               <label className="flex items-center gap-2 text-sm text-gray-700" title="Create the project but exclude it from normal operations until activated.">
                 <input type="checkbox" checked={createForm.inactive} onChange={e => setCreateForm({ ...createForm, inactive: e.target.checked })} />
                 Start inactive
@@ -663,12 +727,15 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {ACTIONS.map(action => (
-              <button key={action.key} disabled={isPending(`bulk:${action.key}`)} title={`${action.title} Applies to selected rows, or the current filtered list if none are selected.`} onClick={() => runBulk(action.key)} className={`${action.key === 'down' ? 'btn-danger' : 'btn-secondary'} inline-flex items-center gap-2`}>
+            {ACTIONS.map(action => {
+              const actionProjects = selected.length > 0 ? projectList.filter(p => selected.includes(p.name)) : filteredProjects;
+              const runnableCount = action.key === 'update' || action.key === 'pull' ? actionProjects.filter(canRunImageUpdate).length : actionProjects.length;
+              return (
+              <button key={action.key} disabled={isPending(`bulk:${action.key}`) || runnableCount === 0} title={action.key === 'update' || action.key === 'pull' ? `${action.title} Enabled only for projects with checked available updates.` : `${action.title} Applies to selected rows, or the current filtered list if none are selected.`} onClick={() => runBulk(action.key)} className={`${action.key === 'down' ? 'btn-danger' : 'btn-secondary'} ${runnableCount === 0 ? 'opacity-50' : ''} inline-flex items-center gap-2`}>
                 {isPending(`bulk:${action.key}`) && <span className="spinner" aria-hidden="true"></span>}
-                {action.label} {selected.length || filteredProjects.length}
+                {action.label} {runnableCount}
               </button>
-            ))}
+            )})}
           </div>
         </div>
 
@@ -695,6 +762,7 @@ export default function Dashboard() {
                       {p.inactive && <Badge tone="amber">inactive</Badge>}
                       {p.has_hook?.update && <Badge tone="cyan">update hook</Badge>}
                       {p.update_policy?.effective_policy === 'no_updates' && <Badge tone="amber">no updates</Badge>}
+                      <Badge tone={updateStatusTone(p)}>{updateStatusLabel(p)}</Badge>
                     </div>
                   </td>
                   <td className="py-3"><Badge tone={p.running ? 'green' : 'gray'}>{p.running ? 'running' : 'stopped'}</Badge></td>
@@ -705,12 +773,14 @@ export default function Dashboard() {
                   <td className="py-3 max-w-[300px] truncate font-mono text-xs text-gray-500" title={p.dir}>{p.dir}</td>
                   <td className="py-3">
                     <div className="flex justify-end gap-1">
-                      {ACTIONS.map(action => (
-                        <button key={action.key} disabled={isPending(`${p.name}:${action.key}`)} title={action.key === 'update' && p.update_policy?.effective_policy === 'no_updates' ? 'Updates are disabled for this project; this records a skipped session.' : action.title} onClick={() => runAction(p.name, action.key)} className={`${action.key === 'down' ? 'mini-danger' : 'mini-button'} inline-flex items-center gap-1`}>
+                      {ACTIONS.map(action => {
+                        const imageActionBlocked = (action.key === 'update' || action.key === 'pull') && !canRunImageUpdate(p);
+                        return (
+                        <button key={action.key} disabled={isPending(`${p.name}:${action.key}`) || imageActionBlocked} title={imageActionBlocked ? updateBlockedReason(p) : action.title} onClick={() => runAction(p.name, action.key)} className={`${action.key === 'down' ? 'mini-danger' : 'mini-button'} ${imageActionBlocked ? 'opacity-50' : ''} inline-flex items-center gap-1`}>
                           {isPending(`${p.name}:${action.key}`) && <span className="spinner" aria-hidden="true"></span>}
                           {action.label}
                         </button>
-                      ))}
+                      )})}
                       <button disabled={!p.inactive} title={p.inactive ? 'Delete the whole project directory after exact-name confirmation.' : 'Mark the project inactive before deleting its directory.'} onClick={() => deleteProject(p)} className={p.inactive ? 'mini-danger' : 'mini-button opacity-50'}>
                         Delete
                       </button>
@@ -730,6 +800,7 @@ export default function Dashboard() {
       {mainTab === 'updates' && (
         <UpdatesPanel
           projects={projectList}
+          availableProjects={availableUpdateProjects}
           page={updatePageSafe}
           pageCount={updatePageCount}
           pageSize={updatePageSize}
@@ -740,6 +811,8 @@ export default function Dashboard() {
             setUpdatePage(1);
           }}
           runAction={runAction}
+          checkUpdates={checkUpdates}
+          checkingUpdates={checkingUpdates}
         />
       )}
 
@@ -822,16 +895,26 @@ function SystemStatus({ skills, summary, history, onRefresh }) {
   );
 }
 
-function UpdatesPanel({ projects, pagedProjects, page, pageCount, pageSize, setPage, setPageSize, runAction }) {
+function UpdatesPanel({ projects, availableProjects, pagedProjects, page, pageCount, pageSize, setPage, setPageSize, runAction, checkUpdates, checkingUpdates }) {
+  const checkedCount = projects.filter(project => project.update_status?.checked).length;
+  const lastChecked = projects
+    .map(project => project.update_status?.checked_at)
+    .filter(Boolean)
+    .sort()
+    .pop();
   return (
     <div className="section-panel">
       <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-gray-950">Update Policies</h2>
-          <p className="text-sm text-gray-600">Review every discovered project before running updates.</p>
+          <h2 className="text-lg font-semibold text-gray-950">Available Updates</h2>
+          <p className="text-sm text-gray-600">{availableProjects.length} project{availableProjects.length === 1 ? '' : 's'} with available image updates. Last check: {lastChecked ? formatDate(lastChecked) : 'never'}.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-gray-500">{projects.length} projects</span>
+          <span className="text-gray-500">{checkedCount}/{projects.length} checked</span>
+          <button type="button" className="btn-secondary inline-flex items-center gap-2" disabled={checkingUpdates} onClick={checkUpdates} title="Check registries for newer image digests without pulling images.">
+            {checkingUpdates && <span className="spinner" aria-hidden="true"></span>}
+            Check Now
+          </button>
           <select className="input max-w-[120px]" value={pageSize} onChange={e => setPageSize(Number(e.target.value))} title="Rows per page.">
             {[10, 25, 50, 100].map(size => <option key={size} value={size}>{size} rows</option>)}
           </select>
@@ -845,16 +928,15 @@ function UpdatesPanel({ projects, pagedProjects, page, pageCount, pageSize, setP
           <thead>
             <tr className="border-b border-gray-200 text-xs uppercase text-gray-500">
               <th className="py-2">Project</th>
-              <th>Policy</th>
-              <th>Reason</th>
-              <th>Sources</th>
+              <th>Status</th>
+              <th>Available Images</th>
+              <th>Last Check</th>
               <th className="text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {pagedProjects.map(project => {
-              const policy = project.update_policy?.effective_policy || project.update_policy?.policy || 'auto';
-              const reason = project.update_policy?.reason || project.update_policy?.effective_reason || '';
+              const checks = (project.update_status?.images || []).filter(check => check.update_available);
               return (
                 <tr key={project.name} className="border-b border-gray-100 align-top">
                   <td className="py-3">
@@ -864,13 +946,23 @@ function UpdatesPanel({ projects, pagedProjects, page, pageCount, pageSize, setP
                       <Badge tone={project.running ? 'green' : 'gray'}>{project.running ? 'running' : 'stopped'}</Badge>
                     </div>
                   </td>
-                  <td className="py-3"><Badge tone={policy === 'no_updates' ? 'amber' : 'blue'}>{policy.replace('_', ' ')}</Badge></td>
-                  <td className="max-w-[360px] py-3 text-xs text-gray-600">{reason || 'Default update behavior.'}</td>
-                  <td className="py-3"><SourceSummary sources={project.image_sources || []} /></td>
+                  <td className="py-3"><Badge tone={updateStatusTone(project)}>{updateStatusLabel(project)}</Badge></td>
+                  <td className="max-w-[360px] py-3 text-xs text-gray-600">
+                    {checks.length > 0 ? checks.map(check => (
+                      <div key={`${check.service}:${check.image}`} className="mb-2">
+                        <div className="font-medium text-gray-800">{check.service}</div>
+                        <div className="break-all font-mono text-gray-500">{check.image}</div>
+                      </div>
+                    )) : 'No checked image updates available.'}
+                  </td>
+                  <td className="py-3 text-xs text-gray-600">
+                    <div>{project.update_status?.checked_at ? `Checked ${formatDate(project.update_status.checked_at)}` : 'Never checked'}</div>
+                    {project.update_status?.error && <div className="mt-1 text-amber-700">{project.update_status.error}</div>}
+                  </td>
                   <td className="py-3">
                     <div className="flex justify-end gap-1">
-                      <button type="button" onClick={() => runAction(project.name, 'pull')} className="mini-button" title="Pull images for this project.">Pull</button>
-                      <button type="button" onClick={() => runAction(project.name, 'update')} className="mini-button" title="Run the update workflow for this project.">Update</button>
+                      <button type="button" onClick={() => runAction(project.name, 'pull')} className="mini-button" title="Pull available image updates for this project.">Pull</button>
+                      <button type="button" onClick={() => runAction(project.name, 'update')} className="mini-button" title="Pull available image updates and recreate this project.">Update</button>
                     </div>
                   </td>
                 </tr>
@@ -878,7 +970,7 @@ function UpdatesPanel({ projects, pagedProjects, page, pageCount, pageSize, setP
             })}
           </tbody>
         </table>
-        {projects.length === 0 && <div className="py-8 text-center text-sm text-gray-500">No projects discovered.</div>}
+        {availableProjects.length === 0 && <div className="py-8 text-center text-sm text-gray-500">No available updates from the last check.</div>}
       </div>
     </div>
   );
