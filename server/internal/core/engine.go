@@ -153,12 +153,25 @@ func (e *Engine) DeleteProject(name string, req DeleteProjectRequest) (*OpResult
 		Success: true,
 	}
 	if req.StopFirst {
-		down := e.Down(project)
-		result.Output += "=== docker compose down ===\n" + down.Output + "\n"
-		if !down.Success {
-			result.Success = false
-			result.ExitCode = down.ExitCode
-			return result, fmt.Errorf("compose down failed")
+		// Skip compose down entirely if the project has no running
+		// containers. This is the common case for stale directories left
+		// over from a rename or import - the compose file often has
+		// unresolvable ${REQUIRED} env vars because the sibling .env is
+		// gone, and `docker compose down` fails at interpolation before
+		// even checking that there is nothing to stop. Blocking Delete on
+		// that failure meant operators could not remove a directory that
+		// had no containers running anyway.
+		_, running := e.getContainers(project.Name)
+		if running {
+			down := e.Down(project)
+			result.Output += "=== docker compose down ===\n" + down.Output + "\n"
+			if !down.Success {
+				result.Success = false
+				result.ExitCode = down.ExitCode
+				return result, fmt.Errorf("compose down failed")
+			}
+		} else {
+			result.Output += "=== docker compose down ===\nno running containers, skipping\n"
 		}
 	}
 	if err := os.RemoveAll(projectAbs); err != nil {
