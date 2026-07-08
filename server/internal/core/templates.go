@@ -294,6 +294,35 @@ volumes:
 			Notes:      "Create a Caddyfile beside compose.yml before starting.",
 		},
 		{
+			ID:          "nginx-proxy-manager",
+			Name:        "Nginx Proxy Manager",
+			Description: "GUI reverse proxy with free SSL via Let's Encrypt. Manage proxy hosts, redirections, streams, and certificates from a browser.",
+			Category:    "proxy",
+			Source:      "community",
+			Image:       "jc21/nginx-proxy-manager:latest",
+			Tags:        []string{"proxy", "ssl", "letsencrypt", "reverse-proxy", "gui"},
+			ComposeContent: `services:
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    restart: unless-stopped
+    ports:
+      - "${NPM_HTTP_PORT:-80}:80"
+      - "${NPM_HTTPS_PORT:-443}:443"
+      - "${NPM_ADMIN_PORT:-81}:81"
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+volumes:
+  npm-data:
+  npm-letsencrypt:
+`,
+			EnvContent: `NPM_HTTP_PORT=80
+NPM_HTTPS_PORT=443
+NPM_ADMIN_PORT=81
+`,
+			Notes: "Default admin login: admin@example.com / changeme. Change it immediately after first login. If Stack Manager's web container also binds port 80, change WEB_HTTP_PORT in Stack Manager's .env to avoid a conflict, or set it to 0 to disable.",
+		},
+		{
 			ID:          "adminer",
 			Name:        "Adminer",
 			Description: "Small database administration UI.",

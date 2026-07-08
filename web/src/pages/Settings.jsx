@@ -155,6 +155,7 @@ export default function Settings() {
       { key: 'ssl', label: 'SSL / TLS', title: 'View, regenerate, or switch the TLS cert (self-signed or Let’s Encrypt).' },
       { key: 'backups', label: 'Backup Endpoints', title: 'Configure local and remote backup destinations.' },
       { key: 'firewall', label: 'Firewall', title: 'ConfigServer Firewall (csf/lfd) install, monitor, and IP management.' },
+      { key: 'proxy', label: 'Reverse Proxy', title: 'Set up Nginx Proxy Manager for domain-based HTTPS and proxying.' },
     ];
   }, [admin]);
 
@@ -1551,6 +1552,50 @@ export default function Settings() {
                 )}
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {admin && activeTab === 'proxy' && (
+        <div className="space-y-4">
+          <div className="section-panel">
+            <h2 className="text-lg font-semibold text-gray-950">Reverse Proxy (Nginx Proxy Manager)</h2>
+            <p className="mt-1 text-sm text-gray-600">Use a reverse proxy when you have real domain names pointing at this host and want per-domain HTTPS via Let's Encrypt. If this host is on a private network or only reachable by IP, the default self-signed certificate is the right choice — skip this panel.</p>
+          </div>
+          <div className="section-panel space-y-3">
+            <h3 className="text-base font-semibold text-gray-950">How to set up</h3>
+            <ol className="list-decimal space-y-3 pl-5 text-sm text-gray-700">
+              <li>
+                <span className="font-medium">Deploy NPM from the Stack Catalog.</span> Go to <span className="font-medium">Stack Catalog</span>, search for <code className="rounded bg-gray-100 px-1">nginx-proxy-manager</code>, and click <span className="font-medium">Spin it Up</span>. It binds ports 80, 443, and 81 (admin).
+              </li>
+              <li>
+                <span className="font-medium">Resolve the port 80 conflict.</span> If Stack Manager's web container also binds port 80, edit Stack Manager's <code className="rounded bg-gray-100 px-1">.env</code> and change <code className="rounded bg-gray-100 px-1">WEB_HTTP_PORT</code> to a different port (e.g. <code className="rounded bg-gray-100 px-1">8193</code>) or set it to <code className="rounded bg-gray-100 px-1">0</code> to disable. Then restart the Stack Manager stack.
+              </li>
+              <li>
+                <span className="font-medium">Log into NPM admin.</span> Open <code className="rounded bg-gray-100 px-1">http://{'<'}host-ip{'>'}:81</code>. Default credentials: <code className="rounded bg-gray-100 px-1">admin@example.com</code> / <code className="rounded bg-gray-100 px-1">changeme</code>. Change the password immediately.
+              </li>
+              <li>
+                <span className="font-medium">Add proxy hosts.</span> For each project you want to expose with HTTPS:
+                <ul className="mt-1 list-disc space-y-1 pl-5 text-gray-600">
+                  <li>Add a <span className="font-medium">Proxy Host</span> in NPM.</li>
+                  <li>Set the <span className="font-medium">Domain</span> to your FQDN (e.g. <code className="rounded bg-gray-100 px-1">app.example.com</code>).</li>
+                  <li>Set <span className="font-medium">Forward Hostname / IP</span> to the Docker host's internal IP or <code className="rounded bg-gray-100 px-1">host.docker.internal</code>.</li>
+                  <li>Set the <span className="font-medium">Forward Port</span> to the project's mapped host port.</li>
+                  <li>Enable <span className="font-medium">SSL</span> and request a new Let's Encrypt certificate.</li>
+                </ul>
+              </li>
+              <li>
+                <span className="font-medium">To proxy Stack Manager itself:</span> Forward Port = the <code className="rounded bg-gray-100 px-1">WEB_SSL_PORT</code> value (default 8993), scheme HTTPS, and enable "Block Common Exploits".
+              </li>
+            </ol>
+          </div>
+          <div className="section-panel border-amber-200 bg-amber-50">
+            <h3 className="text-base font-semibold text-amber-900">When NOT to use a reverse proxy</h3>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
+              <li>Private networks with no public DNS — Let's Encrypt can't issue certificates for IPs or unreachable domains.</li>
+              <li>Public IPs with no domain — same reason. Use the self-signed cert and accept the browser warning.</li>
+              <li>Single-service hosts — a reverse proxy adds complexity. The built-in nginx with a self-signed cert is simpler.</li>
+            </ul>
           </div>
         </div>
       )}
