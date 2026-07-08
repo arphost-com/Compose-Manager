@@ -482,26 +482,19 @@ The agent needs no MariaDB, Redis, or web UI. It mounts the host `DOCKER_ROOT` a
 
 Settings > Firewall drives [Black-HOST/csf](https://github.com/Black-HOST/csf) on the host: install, uninstall, status, allow/deny lists, live `lfd.log` tail, and in-browser editing of `csf.conf`, `csf.allow`, `csf.deny`, `csf.ignore`, and `csf.pignore`. The panel is admin-only. Successful dashboard logins are automatically allow-listed for the caller's public IP so an operator locking themselves out with a bad rule can still get back in from the same address.
 
-**One-time host setup** (needs root; the server container never runs as root):
+The server itself runs inside a container that cannot touch the host firewall directly. It reaches the host the same way the backup skill's root helper does: by spawning a throwaway `--privileged --network=host --pid=host` container via the mounted Docker socket, bind-mounting `/` from the host, and `chroot`'ing into that mount so the helper script executes with real host paths and host networking. That means the only host-side prerequisite is dropping the helper script into `/usr/local/sbin/` — no sudoers configuration needed.
+
+**One-time host setup**:
 
 ```bash
-# 1. Install the helper script and the sudoers rule that scopes it.
 sudo install -m 750 scripts/stack-manager-csf.sh /usr/local/sbin/stack-manager-csf
-sudo install -m 440 scripts/stack-manager-csf.sudoers.example /etc/sudoers.d/stack-manager-csf
-
-# 2. Replace the placeholder username at the bottom of the sudoers file
-#    with the UNIX account the server container runs as (SERVER_USER in .env;
-#    `getent passwd <uid>` maps the numeric ID to a name).
-sudo visudo -f /etc/sudoers.d/stack-manager-csf
-
-# 3. Syntax check. If this fails, revert or Docker networking may still work
-#    but sudo will not, and the firewall panel will show 500 on every call.
-sudo visudo -cf /etc/sudoers.d/stack-manager-csf
 ```
 
-Then in the dashboard, go to **Settings > Firewall** and click **Install csf** — the helper clones the upstream repo, runs its installer, and reports the result. `Uninstall csf` runs `/etc/csf/uninstall.sh` after a typed confirmation. The panel shows detected client IP + an **Add my IP** button so admins can manually allowlist themselves before making a risky change.
+Then in the dashboard, go to **Settings > Firewall** and click **Install csf** — the helper clones the upstream repo, runs its installer, and reports the result. `Uninstall csf` runs `/etc/csf/uninstall.sh` after a typed confirmation. The panel shows the detected client IP + an **Add my IP** button so admins can manually allowlist themselves before making a risky change.
 
-Every `csf.*` config write leaves a timestamped copy under `/var/backups/stack-manager-csf/`. IPv4 goes through `csf`, IPv6 through `csf6`. If `csf6` is missing on the host the panel simply refuses IPv6 operations instead of falling back to a broken command.
+Every `csf.*` config write leaves a timestamped copy under `/var/backups/stack-manager-csf/` on the host. IPv4 goes through `csf`, IPv6 through `csf6`. If `csf6` is missing on the host the panel refuses IPv6 operations instead of falling back to a broken command.
+
+The `scripts/stack-manager-csf.sudoers.example` file remains in the repo for the rarer case of running the server binary directly on the host (not in a container). In that scenario the sudoers rule + a small code change would be needed; the default container install does not use it.
 
 ### Project Deletion
 

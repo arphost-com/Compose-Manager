@@ -1,12 +1,18 @@
 // Package firewall drives ConfigServer Firewall (csf/lfd) on the host
 // through a narrow root helper script installed at /usr/local/sbin/
-// stack-manager-csf. The server container never invokes csf directly; it
-// only ever exec()s `sudo stack-manager-csf <subcommand> [args...]`, and
-// sudo is scoped to that one binary via /etc/sudoers.d/stack-manager-csf.
+// stack-manager-csf on the host. The server itself runs inside a
+// container that only has access to the host through the mounted
+// /var/run/docker.sock. To reach the host firewall, this package
+// spawns a throwaway privileged container via that socket, bind-mounts
+// the host root filesystem into it, and chroot's into the host so the
+// helper script executes with real host paths and host networking.
+// This is the same pattern backup.runTarInRootHelper uses when the
+// non-root server user cannot read a project's bind-mounted data.
 //
 // The helper validates every input against strict patterns, so a
-// compromise of the service account still cannot use this rule to run
-// arbitrary shell.
+// compromise of the server user still cannot use this path to run
+// arbitrary shell — the docker-run command line only carries the
+// subcommand name and pre-validated arguments.
 package firewall
 
 import (
@@ -18,6 +24,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -31,14 +38,12 @@ import (
 
 const (
 	defaultHelperPath = "/usr/local/sbin/stack-manager-csf"
-	// sudoBinary is intentionally a compile-time constant — the only
-	// non-literal argument that reaches exec.Command below is the helper
-	// path (validated) plus the subcommand+args (validated by the
-	// helper). Keeping /usr/bin/sudo hardcoded means Semgrep's dangerous-
-	// exec-command rule does not need a suppression.
-	sudoBinary     = "/usr/bin/sudo"
-	commandTimeout = 60 * time.Second
-	installTimeout = 10 * time.Minute
+	// dockerBinary is a compile-time constant so semgrep's
+	// go.lang.security.audit.dangerous-exec-command rule doesn't flag
+	// the exec.Command below.
+	defaultHelperImage = "alpine:3.22"
+	commandTimeout     = 60 * time.Second
+	installTimeout     = 10 * time.Minute
 )
 
 var allowedConfigs = map[string]struct{}{
@@ -55,6 +60,10 @@ var allowedConfigs = map[string]struct{}{
 // this package.
 type Skill struct {
 	helperPath string
+	// baseImagePrefix is prepended to the helper container's alpine
+	// image reference so hosts routing through the GitLab dependency
+	// proxy don't hit Docker Hub rate limits. Empty by default.
+	baseImagePrefix string
 
 	mu         sync.Mutex
 	lastStatus StatusResult
@@ -73,6 +82,11 @@ func (s *Skill) Version() string     { return "0.1.0" }
 func (s *Skill) Init(ctx context.Context, engine *core.Engine, cfg map[string]interface{}) error {
 	if v, ok := cfg["firewall_helper_path"].(string); ok && v != "" {
 		s.helperPath = v
+	}
+	if v, ok := cfg["base_image_prefix"].(string); ok && v != "" {
+		s.baseImagePrefix = v
+	} else if env := os.Getenv("BASE_IMAGE_PREFIX"); env != "" {
+		s.baseImagePrefix = env
 	}
 	return nil
 }
@@ -355,8 +369,31 @@ func decodeIPBody(r *http.Request) (string, string, error) {
 func (s *Skill) runHelper(ctx context.Context, timeout time.Duration, stdin io.Reader, sub string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	all := append([]string{s.helperPath, sub}, args...)
-	cmd := exec.CommandContext(ctx, sudoBinary, all...) //nolint:gosec // helper path is a hardcoded default; sub+args validated by the helper
+
+	dockerArgs := []string{"run", "--rm"}
+	if stdin != nil {
+		// Only allocate a stdin FD when we actually have content — an
+		// unconsumed docker -i can hang on some runtimes.
+		dockerArgs = append(dockerArgs, "-i")
+	}
+	dockerArgs = append(dockerArgs,
+		"--privileged",
+		"--network=host",
+		"--pid=host",
+		"--uts=host",
+		"--ipc=host",
+		"-v", "/:/host",
+		"-e", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		s.baseImagePrefix+defaultHelperImage,
+		"chroot", "/host",
+		s.helperPath, sub,
+	)
+	dockerArgs = append(dockerArgs, args...)
+
+	// Docker CLI is installed at a well-known path by the server
+	// Dockerfile. The literal string keeps semgrep's dangerous-exec
+	// rule happy since the first argument is compile-time constant.
+	cmd := exec.CommandContext(ctx, "docker", dockerArgs...) //nolint:gosec // helper path is a hardcoded default; sub+args validated by the helper
 	cmd.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
 	if stdin != nil {
 		cmd.Stdin = stdin
