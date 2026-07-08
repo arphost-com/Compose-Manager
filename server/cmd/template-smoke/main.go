@@ -32,13 +32,33 @@ func main() {
 	settle := flag.Duration("settle", envDuration("STACK_TEMPLATE_SETTLE", 45*time.Second), "time to wait after compose up before ps check")
 	keep := flag.Bool("keep", envBool("STACK_TEMPLATE_KEEP"), "keep rendered files and running containers")
 	list := flag.Bool("list", envBool("STACK_TEMPLATE_LIST"), "list matching template IDs and exit")
+	skip := flag.String("skip", os.Getenv("STACK_TEMPLATE_SKIP"), "comma-separated template IDs to skip (still applies after --template / --all / category filters)")
 	flag.Parse()
+
+	skipSet := map[string]struct{}{}
+	for _, id := range strings.Split(*skip, ",") {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			skipSet[id] = struct{}{}
+		}
+	}
 
 	if *mode != "config" && *mode != "startup" {
 		log.Fatalf("unsupported mode %q: use config or startup", *mode)
 	}
 
 	templates := selectTemplates(*templateID, *all, *category, *subcategory)
+	if len(skipSet) > 0 {
+		filtered := templates[:0]
+		for _, t := range templates {
+			if _, drop := skipSet[t.ID]; drop {
+				fmt.Printf("-- skipping %s (--skip)\n", t.ID)
+				continue
+			}
+			filtered = append(filtered, t)
+		}
+		templates = filtered
+	}
 	if *list {
 		for _, template := range templates {
 			fmt.Printf("%s\t%s\t%s\t%s\n", template.ID, template.Name, template.Category, template.Subcategory)
