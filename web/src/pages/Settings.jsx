@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auth, users, backup, projects, agents, schedules, registries, dockerSettings, ssl as sslApi } from '../api/client';
+import { auth, users, backup, projects, agents, schedules, registries, dockerSettings, ssl as sslApi, firewall as firewallApi } from '../api/client';
 import { getThemePreference, setThemePreference } from '../theme';
 import { buildDockerConfig, formFromDockerConfig, pruneMap } from '../utils/dockerSettings';
 
@@ -115,6 +115,17 @@ export default function Settings() {
   const [setupMode, setSetupMode] = useState(() => {
     try { return localStorage.getItem('cm_agent_setup_mode') || 'callback'; } catch { return 'callback'; }
   });
+  const [firewallStatus, setFirewallStatus] = useState(null);
+  const [firewallAllow, setFirewallAllow] = useState([]);
+  const [firewallDeny, setFirewallDeny] = useState([]);
+  const [firewallLog, setFirewallLog] = useState('');
+  const [firewallLogLines, setFirewallLogLines] = useState(200);
+  const [firewallConfigName, setFirewallConfigName] = useState('csf.conf');
+  const [firewallConfigContent, setFirewallConfigContent] = useState('');
+  const [firewallConfigDirty, setFirewallConfigDirty] = useState(false);
+  const [firewallIPForm, setFirewallIPForm] = useState({ ip: '', comment: '' });
+  const [firewallMyIP, setFirewallMyIP] = useState('');
+  const [firewallBusy, setFirewallBusy] = useState(false);
 
   const admin = me?.role === 'admin';
   const tabs = useMemo(() => {
@@ -129,6 +140,7 @@ export default function Settings() {
       { key: 'docker', label: 'Docker Settings', title: 'Edit Docker daemon.json settings for this host.' },
       { key: 'ssl', label: 'SSL / TLS', title: 'View, regenerate, or switch the TLS cert (self-signed or Let’s Encrypt).' },
       { key: 'backups', label: 'Backup Endpoints', title: 'Configure local and remote backup destinations.' },
+      { key: 'firewall', label: 'Firewall', title: 'ConfigServer Firewall (csf/lfd) install, monitor, and IP management.' },
     ];
   }, [admin]);
 
@@ -172,6 +184,141 @@ export default function Settings() {
   useEffect(() => {
     if (admin && activeTab === 'registries') loadSavedRegistries();
   }, [admin, activeTab]);
+
+  useEffect(() => {
+    if (admin && activeTab === 'firewall') loadFirewall();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admin, activeTab]);
+
+  useEffect(() => {
+    if (admin && activeTab === 'firewall' && firewallStatus?.installed) {
+      loadFirewallConfig(firewallConfigName);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firewallConfigName, firewallStatus?.installed]);
+
+  const loadFirewall = async () => {
+    try {
+      const [statusRes, myIpRes] = await Promise.all([firewallApi.status(), firewallApi.clientIP().catch(() => ({ data: {} }))]);
+      setFirewallStatus(statusRes.data);
+      setFirewallMyIP(myIpRes.data?.ip || '');
+      if (statusRes.data?.installed) {
+        await Promise.all([loadFirewallLists(), loadFirewallLog(firewallLogLines)]);
+      }
+    } catch (err) {
+      showError(err);
+    }
+  };
+
+  const loadFirewallLists = async () => {
+    try {
+      const [allowRes, denyRes] = await Promise.all([firewallApi.listAllow(), firewallApi.listDeny()]);
+      setFirewallAllow(allowRes.data?.entries || []);
+      setFirewallDeny(denyRes.data?.entries || []);
+    } catch (err) {
+      showError(err);
+    }
+  };
+
+  const loadFirewallLog = async (lines) => {
+    try {
+      const res = await firewallApi.tailLog(lines);
+      setFirewallLog(res.data?.content || '');
+    } catch (err) {
+      showError(err);
+    }
+  };
+
+  const loadFirewallConfig = async (name) => {
+    try {
+      const res = await firewallApi.readConfig(name);
+      setFirewallConfigContent(res.data?.content || '');
+      setFirewallConfigDirty(false);
+    } catch (err) {
+      showError(err);
+    }
+  };
+
+  const installFirewall = async () => {
+    if (!window.confirm('Install ConfigServer Firewall from Black-HOST/csf on this host? This changes host firewall state and may briefly interrupt connectivity.')) return;
+    setFirewallBusy(true);
+    try {
+      const res = await firewallApi.install();
+      showMessage(`Firewall install: ${res.data?.output?.trim() || 'ok'}`);
+      await loadFirewall();
+    } catch (err) { showError(err); } finally { setFirewallBusy(false); }
+  };
+
+  const uninstallFirewall = async () => {
+    const typed = window.prompt('Type UNINSTALL to remove ConfigServer Firewall from this host.');
+    if ((typed || '').toUpperCase() !== 'UNINSTALL') return;
+    setFirewallBusy(true);
+    try {
+      const res = await firewallApi.uninstall();
+      showMessage(`Firewall uninstall: ${res.data?.output?.trim() || 'ok'}`);
+      await loadFirewall();
+    } catch (err) { showError(err); } finally { setFirewallBusy(false); }
+  };
+
+  const restartFirewall = async () => {
+    setFirewallBusy(true);
+    try {
+      const res = await firewallApi.restart();
+      showMessage(`csf -r: ${res.data?.output?.trim() || 'ok'}`);
+      await loadFirewall();
+    } catch (err) { showError(err); } finally { setFirewallBusy(false); }
+  };
+
+  const reloadLFD = async () => {
+    setFirewallBusy(true);
+    try {
+      const res = await firewallApi.reloadLFD();
+      showMessage(`lfd reload: ${res.data?.output?.trim() || 'ok'}`);
+    } catch (err) { showError(err); } finally { setFirewallBusy(false); }
+  };
+
+  const submitFirewallIP = async (action) => {
+    const ip = firewallIPForm.ip.trim();
+    const comment = firewallIPForm.comment.trim();
+    if (!ip || !comment) { showError(new Error('IP and comment are required')); return; }
+    setFirewallBusy(true);
+    try {
+      if (action === 'allow') await firewallApi.allowIP(ip, comment);
+      else await firewallApi.denyIP(ip, comment);
+      showMessage(`${action} ${ip}: ok`);
+      setFirewallIPForm({ ip: '', comment: '' });
+      await loadFirewallLists();
+    } catch (err) { showError(err); } finally { setFirewallBusy(false); }
+  };
+
+  const removeFirewallIP = async (ip) => {
+    if (!window.confirm(`Remove ${ip} from allow and deny lists?`)) return;
+    setFirewallBusy(true);
+    try {
+      await firewallApi.removeIP(ip);
+      showMessage(`removed ${ip}`);
+      await loadFirewallLists();
+    } catch (err) { showError(err); } finally { setFirewallBusy(false); }
+  };
+
+  const allowMyIP = async () => {
+    setFirewallBusy(true);
+    try {
+      const res = await firewallApi.allowMyIP();
+      showMessage(`allowed ${res.data?.ip}: ${res.data?.output?.trim() || 'ok'}`);
+      await loadFirewallLists();
+    } catch (err) { showError(err); } finally { setFirewallBusy(false); }
+  };
+
+  const saveFirewallConfig = async () => {
+    if (!window.confirm(`Overwrite /etc/csf/${firewallConfigName}? A timestamped backup is kept under /var/backups/stack-manager-csf/.`)) return;
+    setFirewallBusy(true);
+    try {
+      const res = await firewallApi.writeConfig(firewallConfigName, firewallConfigContent);
+      showMessage(res.data?.output?.trim() || 'saved');
+      setFirewallConfigDirty(false);
+    } catch (err) { showError(err); } finally { setFirewallBusy(false); }
+  };
 
   const loadSavedRegistries = async () => {
     try {
@@ -1333,6 +1480,147 @@ export default function Settings() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {admin && activeTab === 'firewall' && (
+        <div className="space-y-4">
+          <div className="section-panel">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-lg font-semibold text-gray-950">Firewall (ConfigServer csf/lfd)</h2>
+              <p className="text-sm text-gray-600">
+                Drives csf on the host through a scoped root helper at <code className="rounded bg-gray-100 px-1">/usr/local/sbin/stack-manager-csf</code>. Successful logins allow-list the caller&apos;s IP automatically. Upstream: <a className="underline" href="https://github.com/Black-HOST/csf" target="_blank" rel="noreferrer">Black-HOST/csf</a>.
+              </p>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-4">
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                <div className="text-xs uppercase text-gray-500">Installed</div>
+                <div className="mt-1 text-sm font-medium">{firewallStatus?.installed ? 'yes' : 'no'}</div>
+              </div>
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                <div className="text-xs uppercase text-gray-500">LFD active</div>
+                <div className="mt-1 text-sm font-medium">{firewallStatus?.lfd_active ? 'yes' : 'no'}</div>
+              </div>
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3" title="TESTING=1 in csf.conf means csf writes rules but flushes on lfd restart.">
+                <div className="text-xs uppercase text-gray-500">Testing mode</div>
+                <div className="mt-1 text-sm font-medium">{firewallStatus?.testing_mode || '-'}</div>
+              </div>
+              <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
+                <div className="text-xs uppercase text-gray-500">iptables rules</div>
+                <div className="mt-1 text-sm font-medium">{firewallStatus?.iptables_rules ?? '-'}</div>
+              </div>
+            </div>
+            {firewallStatus?.version && <div className="mt-2 text-xs font-mono text-gray-600 break-all">{firewallStatus.version}</div>}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {!firewallStatus?.installed && <button className="btn-primary" disabled={firewallBusy} onClick={installFirewall} title="Clone Black-HOST/csf and run its installer via the root helper.">Install csf</button>}
+              {firewallStatus?.installed && <>
+                <button className="btn-secondary" disabled={firewallBusy} onClick={restartFirewall} title="Run csf -r on the host.">Restart csf</button>
+                <button className="btn-secondary" disabled={firewallBusy} onClick={reloadLFD} title="systemctl restart lfd.">Reload lfd</button>
+                <button className="mini-danger" disabled={firewallBusy} onClick={uninstallFirewall} title="Run /etc/csf/uninstall.sh. Removes csf and lfd from the host.">Uninstall csf</button>
+              </>}
+              <button className="btn-secondary" disabled={firewallBusy} onClick={loadFirewall} title="Re-poll status, allow/deny lists, and log tail.">Refresh</button>
+            </div>
+          </div>
+
+          <div className="section-panel">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-base font-semibold text-gray-950">Your IP</h3>
+              <p className="text-sm text-gray-600">Detected from the request. When csf is installed, every successful login already runs an allow for this IP; use the button to force one if the login-time attempt failed.</p>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="font-mono text-sm text-gray-800">{firewallMyIP || '(unknown)'}</span>
+              <button className="btn-primary" disabled={!firewallStatus?.installed || firewallBusy || !firewallMyIP} onClick={allowMyIP} title="Run csf -a for your detected IP with a Stack Manager comment.">Add my IP</button>
+            </div>
+          </div>
+
+          {firewallStatus?.installed && (
+            <>
+              <div className="section-panel">
+                <h3 className="text-base font-semibold text-gray-950">Manual allow / deny</h3>
+                <div className="mt-3 grid gap-2 md:grid-cols-[1fr_2fr_auto_auto]">
+                  <input className="input" placeholder="IP or CIDR (v4 or v6)" value={firewallIPForm.ip} onChange={e => setFirewallIPForm({ ...firewallIPForm, ip: e.target.value })} />
+                  <input className="input" placeholder="Comment (letters, digits, space, . _ @ : / -)" value={firewallIPForm.comment} onChange={e => setFirewallIPForm({ ...firewallIPForm, comment: e.target.value })} maxLength={120} />
+                  <button className="btn-primary" disabled={firewallBusy} onClick={() => submitFirewallIP('allow')} title="csf -a for IPv4 or csf6 -a for IPv6.">Allow</button>
+                  <button className="mini-danger" disabled={firewallBusy} onClick={() => submitFirewallIP('deny')} title="csf -d for IPv4 or csf6 -d for IPv6.">Deny</button>
+                </div>
+              </div>
+
+              <div className="section-panel">
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-950">csf.allow ({firewallAllow.length})</h3>
+                    <div className="mt-2 max-h-72 overflow-auto rounded border border-gray-200">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-gray-50 text-gray-500"><tr><th className="p-2">IP</th><th className="p-2">Comment</th><th className="p-2 text-right">Action</th></tr></thead>
+                        <tbody>
+                          {firewallAllow.map(entry => (
+                            <tr key={'allow-' + entry.raw} className="border-t border-gray-100">
+                              <td className="p-2 font-mono break-all">{entry.ip}</td>
+                              <td className="p-2 break-all">{entry.comment}</td>
+                              <td className="p-2 text-right whitespace-nowrap"><button className="mini-danger" disabled={firewallBusy} onClick={() => removeFirewallIP(entry.ip)} title="Remove from both allow and deny.">Remove</button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {firewallAllow.length === 0 && <div className="p-3 text-xs text-gray-500">No allow entries.</div>}
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-950">csf.deny ({firewallDeny.length})</h3>
+                    <div className="mt-2 max-h-72 overflow-auto rounded border border-gray-200">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-gray-50 text-gray-500"><tr><th className="p-2">IP</th><th className="p-2">Comment</th><th className="p-2 text-right">Action</th></tr></thead>
+                        <tbody>
+                          {firewallDeny.map(entry => (
+                            <tr key={'deny-' + entry.raw} className="border-t border-gray-100">
+                              <td className="p-2 font-mono break-all">{entry.ip}</td>
+                              <td className="p-2 break-all">{entry.comment}</td>
+                              <td className="p-2 text-right whitespace-nowrap"><button className="mini-danger" disabled={firewallBusy} onClick={() => removeFirewallIP(entry.ip)} title="Remove from both allow and deny.">Remove</button></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {firewallDeny.length === 0 && <div className="p-3 text-xs text-gray-500">No deny entries.</div>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="section-panel">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-base font-semibold text-gray-950">Config file</h3>
+                  <div className="flex flex-wrap gap-2">
+                    <select className="input" value={firewallConfigName} onChange={e => setFirewallConfigName(e.target.value)}>
+                      {['csf.conf', 'csf.allow', 'csf.deny', 'csf.ignore', 'csf.pignore'].map(name => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                    <button className="btn-secondary" disabled={firewallBusy} onClick={() => loadFirewallConfig(firewallConfigName)}>Reload</button>
+                    <button className="btn-primary" disabled={firewallBusy || !firewallConfigDirty} onClick={saveFirewallConfig} title="A timestamped backup is written under /var/backups/stack-manager-csf/ before overwriting.">Save</button>
+                  </div>
+                </div>
+                <textarea
+                  className="mt-2 w-full rounded border border-gray-200 bg-gray-950 p-3 font-mono text-xs text-gray-100"
+                  rows={16}
+                  spellCheck={false}
+                  value={firewallConfigContent}
+                  onChange={e => { setFirewallConfigContent(e.target.value); setFirewallConfigDirty(true); }}
+                />
+                {firewallConfigDirty && <div className="mt-1 text-xs text-amber-700">Unsaved changes.</div>}
+              </div>
+
+              <div className="section-panel">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-base font-semibold text-gray-950">/var/log/lfd.log</h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="text-xs text-gray-600" title="Number of trailing lines to show. Cap 5000.">Lines
+                      <input className="input ml-1 w-24" type="number" min={10} max={5000} value={firewallLogLines} onChange={e => setFirewallLogLines(Number(e.target.value) || 200)} />
+                    </label>
+                    <button className="btn-secondary" disabled={firewallBusy} onClick={() => loadFirewallLog(firewallLogLines)}>Refresh</button>
+                  </div>
+                </div>
+                <pre className="mt-2 max-h-96 overflow-auto rounded bg-gray-950 p-3 font-mono text-xs text-gray-100 whitespace-pre-wrap break-all">{firewallLog || '(empty)'}</pre>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

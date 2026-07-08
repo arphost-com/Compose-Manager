@@ -240,6 +240,26 @@ export const ssl = {
   renewLetsEncrypt: () => request('/settings/ssl/letsencrypt/renew', { method: 'POST' }),
 };
 
+export const firewall = {
+  status: () => request('/skills/firewall/status'),
+  version: () => request('/skills/firewall/version'),
+  install: () => request('/skills/firewall/install', { method: 'POST' }),
+  uninstall: () => request('/skills/firewall/uninstall', { method: 'POST', body: JSON.stringify({ confirm: 'UNINSTALL' }) }),
+  restart: () => request('/skills/firewall/restart', { method: 'POST' }),
+  reloadLFD: () => request('/skills/firewall/reload-lfd', { method: 'POST' }),
+  listAllow: () => request('/skills/firewall/allow'),
+  listDeny: () => request('/skills/firewall/deny'),
+  listTempbans: () => request('/skills/firewall/tempbans'),
+  allowIP: (ip, comment) => request('/skills/firewall/ips/allow', { method: 'POST', body: JSON.stringify({ ip, comment }) }),
+  denyIP: (ip, comment) => request('/skills/firewall/ips/deny', { method: 'POST', body: JSON.stringify({ ip, comment }) }),
+  removeIP: (ip) => request(`/skills/firewall/ips/${encodeURIComponent(ip)}`, { method: 'DELETE' }),
+  readConfig: (name) => request(`/skills/firewall/config/${encodeURIComponent(name)}`),
+  writeConfig: (name, content) => request(`/skills/firewall/config/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify({ content }) }),
+  tailLog: (lines = 200) => request(`/skills/firewall/log?lines=${encodeURIComponent(lines)}`),
+  clientIP: () => request('/skills/firewall/client-ip'),
+  allowMyIP: () => request('/skills/firewall/allow-my-ip', { method: 'POST' }),
+};
+
 // Watch = Up + persistent live-tail startup log. Sessions are stored on disk
 // so a browser refresh mid-stream replays from where it left off.
 export const watch = {

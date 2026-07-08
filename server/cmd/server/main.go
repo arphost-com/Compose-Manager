@@ -19,6 +19,7 @@ import (
 	"github.com/arphost-com/Stack-Manager/server/internal/skills/backup"
 	"github.com/arphost-com/Stack-Manager/server/internal/skills/dbadmin"
 	"github.com/arphost-com/Stack-Manager/server/internal/skills/debug"
+	"github.com/arphost-com/Stack-Manager/server/internal/skills/firewall"
 	"github.com/arphost-com/Stack-Manager/server/internal/skills/frontend"
 	"github.com/arphost-com/Stack-Manager/server/internal/skills/security"
 	"github.com/arphost-com/Stack-Manager/server/internal/storage"
@@ -77,6 +78,8 @@ func main() {
 	registry.Register(backup.New())
 	registry.Register(dbadmin.New())
 	registry.Register(frontend.New())
+	firewallSkill := firewall.New()
+	registry.Register(firewallSkill)
 
 	skillCfg := map[string]interface{}{
 		"backup_dir": cfg.BackupDir,
@@ -103,6 +106,7 @@ func main() {
 	watchHandler := handlers.NewWatchHandler(watchManager)
 	skillHandler := handlers.NewSkillHandler(registry)
 	authHandler := handlers.NewAuthHandler(userStore, sessionManager)
+	authHandler.IPAllower = firewallSkill
 
 	// Router
 	r := chi.NewRouter()

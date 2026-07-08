@@ -1,8 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"log"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	cmauth "github.com/arphost-com/Stack-Manager/server/internal/auth"
@@ -10,9 +14,19 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// IPAllower is implemented by the firewall skill. Kept as an interface so
+// auth doesn't depend on skills package.
+type IPAllower interface {
+	AllowIP(ctx context.Context, ip, comment string) error
+}
+
 type AuthHandler struct {
 	Store    *cmauth.Store
 	Sessions *cmauth.SessionManager
+	// IPAllower is optional. When set, successful logins fire off a
+	// best-effort call to allowlist the caller's IP in CSF. Errors are
+	// logged and swallowed so a firewall problem cannot break login.
+	IPAllower IPAllower
 }
 
 func NewAuthHandler(store *cmauth.Store, sessions *cmauth.SessionManager) *AuthHandler {
@@ -41,11 +55,43 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.allowlistLoginIP(r, user.Username)
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"token":      session.Token,
 		"expires_at": session.ExpiresAt.Format(time.RFC3339),
 		"user":       user,
 	})
+}
+
+// allowlistLoginIP fires off a best-effort CSF allow for the caller. It
+// uses a fresh background context (not r.Context()) so the auth response
+// can return before the helper finishes; a slow sudo/csf must not make
+// login look slow to the browser.
+func (h *AuthHandler) allowlistLoginIP(r *http.Request, username string) {
+	if h.IPAllower == nil {
+		return
+	}
+	ip := loginClientIP(r)
+	if ip == "" {
+		return
+	}
+	comment := "Stack Manager login " + strings.TrimSpace(username)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := h.IPAllower.AllowIP(ctx, ip, comment); err != nil {
+			log.Printf("firewall: allowlist %s failed: %v", ip, err)
+		}
+	}()
+}
+
+func loginClientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {

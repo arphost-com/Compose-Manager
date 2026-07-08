@@ -478,6 +478,31 @@ grep -E '^(AGENT_NAME|AGENT_TOKEN|AGENT_PORT|DOCKER_ROOT|AGENT_CONTROLLER_URL)='
 
 The agent needs no MariaDB, Redis, or web UI. It mounts the host `DOCKER_ROOT` at the same path inside the container so relative `./file.conf` bind mounts in child compose files resolve to real host files. See [Agent Modes](docs/AGENT_MODES.md) for the full protocol reference.
 
+### Firewall (ConfigServer csf/lfd)
+
+Settings > Firewall drives [Black-HOST/csf](https://github.com/Black-HOST/csf) on the host: install, uninstall, status, allow/deny lists, live `lfd.log` tail, and in-browser editing of `csf.conf`, `csf.allow`, `csf.deny`, `csf.ignore`, and `csf.pignore`. The panel is admin-only. Successful dashboard logins are automatically allow-listed for the caller's public IP so an operator locking themselves out with a bad rule can still get back in from the same address.
+
+**One-time host setup** (needs root; the server container never runs as root):
+
+```bash
+# 1. Install the helper script and the sudoers rule that scopes it.
+sudo install -m 750 scripts/stack-manager-csf.sh /usr/local/sbin/stack-manager-csf
+sudo install -m 440 scripts/stack-manager-csf.sudoers.example /etc/sudoers.d/stack-manager-csf
+
+# 2. Replace the placeholder username at the bottom of the sudoers file
+#    with the UNIX account the server container runs as (SERVER_USER in .env;
+#    `getent passwd <uid>` maps the numeric ID to a name).
+sudo visudo -f /etc/sudoers.d/stack-manager-csf
+
+# 3. Syntax check. If this fails, revert or Docker networking may still work
+#    but sudo will not, and the firewall panel will show 500 on every call.
+sudo visudo -cf /etc/sudoers.d/stack-manager-csf
+```
+
+Then in the dashboard, go to **Settings > Firewall** and click **Install csf** — the helper clones the upstream repo, runs its installer, and reports the result. `Uninstall csf` runs `/etc/csf/uninstall.sh` after a typed confirmation. The panel shows detected client IP + an **Add my IP** button so admins can manually allowlist themselves before making a risky change.
+
+Every `csf.*` config write leaves a timestamped copy under `/var/backups/stack-manager-csf/`. IPv4 goes through `csf`, IPv6 through `csf6`. If `csf6` is missing on the host the panel simply refuses IPv6 operations instead of falling back to a broken command.
+
 ### Project Deletion
 
 Directory deletion is intentionally gated:

@@ -1,0 +1,25 @@
+# stack-manager-csf.sudoers.example
+#
+# Grants the Stack Manager service account passwordless sudo for the CSF
+# helper script ONLY. Install as:
+#
+#   sudo install -m 640 scripts/stack-manager-csf.sh /usr/local/sbin/stack-manager-csf
+#   sudo install -m 440 scripts/stack-manager-csf.sudoers.example /etc/sudoers.d/stack-manager-csf
+#   sudo sed -i "s/^Runas_Alias STACK_MANAGER_USER = .*/Runas_Alias STACK_MANAGER_USER = ALL/" /etc/sudoers.d/stack-manager-csf
+#   sudo visudo -cf /etc/sudoers.d/stack-manager-csf   # syntax check
+#
+# Then edit /etc/sudoers.d/stack-manager-csf and replace `stack-manager` on
+# the last line with the actual UNIX user the server container runs as on
+# THIS host (the value of SERVER_USER in .env; look up the username with
+# `getent passwd <uid>`).
+#
+# The script is the only command allowed. It validates its own arguments
+# against strict patterns and refuses shell metacharacters, so a compromise
+# of the service account cannot use this rule to run arbitrary commands.
+
+Cmnd_Alias STACK_MANAGER_CSF = /usr/local/sbin/stack-manager-csf, /usr/local/sbin/stack-manager-csf *
+
+Defaults!STACK_MANAGER_CSF !requiretty
+Defaults!STACK_MANAGER_CSF !logfile
+
+stack-manager ALL=(root) NOPASSWD: STACK_MANAGER_CSF
