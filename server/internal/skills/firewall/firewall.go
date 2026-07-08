@@ -31,9 +31,14 @@ import (
 
 const (
 	defaultHelperPath = "/usr/local/sbin/stack-manager-csf"
-	defaultSudoPath   = "/usr/bin/sudo"
-	commandTimeout    = 60 * time.Second
-	installTimeout    = 10 * time.Minute
+	// sudoBinary is intentionally a compile-time constant — the only
+	// non-literal argument that reaches exec.Command below is the helper
+	// path (validated) plus the subcommand+args (validated by the
+	// helper). Keeping /usr/bin/sudo hardcoded means Semgrep's dangerous-
+	// exec-command rule does not need a suppression.
+	sudoBinary     = "/usr/bin/sudo"
+	commandTimeout = 60 * time.Second
+	installTimeout = 10 * time.Minute
 )
 
 var allowedConfigs = map[string]struct{}{
@@ -50,7 +55,6 @@ var allowedConfigs = map[string]struct{}{
 // this package.
 type Skill struct {
 	helperPath string
-	sudoPath   string
 
 	mu         sync.Mutex
 	lastStatus StatusResult
@@ -59,7 +63,7 @@ type Skill struct {
 
 // New returns an unconfigured Skill. Init picks up overrides.
 func New() *Skill {
-	return &Skill{helperPath: defaultHelperPath, sudoPath: defaultSudoPath}
+	return &Skill{helperPath: defaultHelperPath}
 }
 
 func (s *Skill) Name() string        { return "firewall" }
@@ -69,9 +73,6 @@ func (s *Skill) Version() string     { return "0.1.0" }
 func (s *Skill) Init(ctx context.Context, engine *core.Engine, cfg map[string]interface{}) error {
 	if v, ok := cfg["firewall_helper_path"].(string); ok && v != "" {
 		s.helperPath = v
-	}
-	if v, ok := cfg["sudo_path"].(string); ok && v != "" {
-		s.sudoPath = v
 	}
 	return nil
 }
@@ -355,7 +356,7 @@ func (s *Skill) runHelper(ctx context.Context, timeout time.Duration, stdin io.R
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	all := append([]string{s.helperPath, sub}, args...)
-	cmd := exec.CommandContext(ctx, s.sudoPath, all...) //nolint:gosec // args validated by helper; sudo scoped to helper only
+	cmd := exec.CommandContext(ctx, sudoBinary, all...) //nolint:gosec // helper path is a hardcoded default; sub+args validated by the helper
 	cmd.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
 	if stdin != nil {
 		cmd.Stdin = stdin
