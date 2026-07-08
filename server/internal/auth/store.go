@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/arphost-com/Stack-Manager/server/internal/storage"
+	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -26,16 +28,20 @@ const (
 )
 
 type User struct {
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"password_hash"`
-	Role         string    `json:"role"`
-	CreatedAt    time.Time `json:"created_at"`
+	Username        string    `json:"username"`
+	PasswordHash    string    `json:"password_hash"`
+	Role            string    `json:"role"`
+	TOTPSecret      string    `json:"-"`
+	TOTPEnabled     bool      `json:"totp_enabled"`
+	TOTPBackupCodes string    `json:"-"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type PublicUser struct {
-	Username  string    `json:"username"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
+	Username    string    `json:"username"`
+	Role        string    `json:"role"`
+	TOTPEnabled bool      `json:"totp_enabled"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type Store struct {
@@ -95,11 +101,14 @@ func (s *Store) upsertUserPassword(username, password, role string) error {
 func (s *Store) Authenticate(username, password string) (PublicUser, bool) {
 	username = normalizeUsername(username)
 	var user User
-	err := s.store.DB.QueryRowContext(context.Background(), `SELECT username, password_hash, role, created_at FROM users WHERE username=?`, username).
-		Scan(&user.Username, &user.PasswordHash, &user.Role, &user.CreatedAt)
+	var backupCodes sql.NullString
+	err := s.store.DB.QueryRowContext(context.Background(),
+		`SELECT username, password_hash, role, totp_secret, totp_enabled, totp_backup_codes, created_at FROM users WHERE username=?`, username).
+		Scan(&user.Username, &user.PasswordHash, &user.Role, &user.TOTPSecret, &user.TOTPEnabled, &backupCodes, &user.CreatedAt)
 	if err != nil {
 		return PublicUser{}, false
 	}
+	user.TOTPBackupCodes = backupCodes.String
 	if subtle.ConstantTimeCompare([]byte(user.Username), []byte(username)) != 1 {
 		return PublicUser{}, false
 	}
@@ -107,6 +116,115 @@ func (s *Store) Authenticate(username, password string) (PublicUser, bool) {
 		return PublicUser{}, false
 	}
 	return publicUser(user), true
+}
+
+// HasTOTP returns true if the given username has TOTP enabled.
+func (s *Store) HasTOTP(username string) bool {
+	username = normalizeUsername(username)
+	var enabled bool
+	err := s.store.DB.QueryRowContext(context.Background(),
+		`SELECT totp_enabled FROM users WHERE username=?`, username).Scan(&enabled)
+	return err == nil && enabled
+}
+
+// TOTPEnroll generates a new TOTP secret + backup codes and stores
+// them on the user row WITHOUT enabling TOTP. The caller must verify
+// a code via TOTPVerifyAndEnable to finalize enrollment.
+func (s *Store) TOTPEnroll(username string) (secret string, backupCodes []string, otpURL string, err error) {
+	username = normalizeUsername(username)
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "Stack Manager",
+		AccountName: username,
+	})
+	if err != nil {
+		return "", nil, "", err
+	}
+	codes := generateBackupCodes(8)
+	codesJSON, _ := json.Marshal(codes)
+	ctx := context.Background()
+	_, err = s.store.DB.ExecContext(ctx,
+		`UPDATE users SET totp_secret=?, totp_enabled=FALSE, totp_backup_codes=? WHERE username=?`,
+		key.Secret(), string(codesJSON), username)
+	if err != nil {
+		return "", nil, "", err
+	}
+	s.store.DeleteCache(ctx, "users:list")
+	return key.Secret(), codes, key.URL(), nil
+}
+
+// TOTPVerifyAndEnable checks a 6-digit code against the stored secret.
+// On success it flips totp_enabled to true.
+func (s *Store) TOTPVerifyAndEnable(username, code string) error {
+	username = normalizeUsername(username)
+	var secret string
+	err := s.store.DB.QueryRowContext(context.Background(),
+		`SELECT totp_secret FROM users WHERE username=?`, username).Scan(&secret)
+	if err != nil {
+		return fmt.Errorf("user not found")
+	}
+	if secret == "" {
+		return fmt.Errorf("TOTP not enrolled — enroll first")
+	}
+	if !totp.Validate(code, secret) {
+		return fmt.Errorf("invalid code")
+	}
+	ctx := context.Background()
+	_, err = s.store.DB.ExecContext(ctx,
+		`UPDATE users SET totp_enabled=TRUE WHERE username=?`, username)
+	s.store.DeleteCache(ctx, "users:list")
+	return err
+}
+
+// TOTPValidateCode checks a 6-digit code OR a single-use backup code.
+// Backup codes are consumed on use.
+func (s *Store) TOTPValidateCode(username, code string) bool {
+	username = normalizeUsername(username)
+	var secret string
+	var backupRaw sql.NullString
+	err := s.store.DB.QueryRowContext(context.Background(),
+		`SELECT totp_secret, totp_backup_codes FROM users WHERE username=?`, username).
+		Scan(&secret, &backupRaw)
+	if err != nil {
+		return false
+	}
+	if totp.Validate(code, secret) {
+		return true
+	}
+	// Try backup codes.
+	var codes []string
+	if backupRaw.String != "" {
+		_ = json.Unmarshal([]byte(backupRaw.String), &codes)
+	}
+	for i, c := range codes {
+		if subtle.ConstantTimeCompare([]byte(c), []byte(code)) == 1 {
+			codes = append(codes[:i], codes[i+1:]...)
+			codesJSON, _ := json.Marshal(codes)
+			_, _ = s.store.DB.ExecContext(context.Background(),
+				`UPDATE users SET totp_backup_codes=? WHERE username=?`, string(codesJSON), username)
+			return true
+		}
+	}
+	return false
+}
+
+// TOTPDisable removes the TOTP secret and backup codes.
+func (s *Store) TOTPDisable(username string) error {
+	username = normalizeUsername(username)
+	ctx := context.Background()
+	_, err := s.store.DB.ExecContext(ctx,
+		`UPDATE users SET totp_secret='', totp_enabled=FALSE, totp_backup_codes=NULL WHERE username=?`, username)
+	s.store.DeleteCache(ctx, "users:list")
+	return err
+}
+
+func generateBackupCodes(n int) []string {
+	codes := make([]string, n)
+	for i := range codes {
+		var b [4]byte
+		_, _ = rand.Read(b[:])
+		codes[i] = hex.EncodeToString(b[:])
+	}
+	return codes
 }
 
 func (s *Store) ListUsers() []PublicUser {
@@ -239,9 +357,10 @@ func (s *Store) adminCount(ctx context.Context) (int, error) {
 
 func publicUser(user User) PublicUser {
 	return PublicUser{
-		Username:  user.Username,
-		Role:      user.Role,
-		CreatedAt: user.CreatedAt,
+		Username:    user.Username,
+		Role:        user.Role,
+		TOTPEnabled: user.TOTPEnabled,
+		CreatedAt:   user.CreatedAt,
 	}
 }
 
@@ -328,6 +447,44 @@ func (m *SessionManager) Get(token string) (Session, bool) {
 
 func (m *SessionManager) Delete(token string) {
 	_ = m.store.Redis.Del(context.Background(), "session:"+token).Err()
+}
+
+// CreatePending stores a short-lived (2 min) token for the TOTP second
+// step. Not a full session — can only be redeemed via /auth/totp/login.
+func (m *SessionManager) CreatePending(user PublicUser) (Session, error) {
+	token, err := randomToken()
+	if err != nil {
+		return Session{}, err
+	}
+	session := Session{
+		Token:     token,
+		User:      user,
+		ExpiresAt: time.Now().UTC().Add(2 * time.Minute),
+	}
+	raw, err := json.Marshal(session)
+	if err != nil {
+		return Session{}, err
+	}
+	if err := m.store.Redis.Set(context.Background(), "totp_pending:"+token, raw, 2*time.Minute).Err(); err != nil {
+		return Session{}, err
+	}
+	return session, nil
+}
+
+func (m *SessionManager) GetPending(token string) (Session, bool) {
+	raw, err := m.store.Redis.Get(context.Background(), "totp_pending:"+token).Bytes()
+	if err != nil {
+		return Session{}, false
+	}
+	var session Session
+	if err := json.Unmarshal(raw, &session); err != nil {
+		return Session{}, false
+	}
+	return session, true
+}
+
+func (m *SessionManager) DeletePending(token string) {
+	_ = m.store.Redis.Del(context.Background(), "totp_pending:"+token).Err()
 }
 
 func BearerToken(r *http.Request) string {

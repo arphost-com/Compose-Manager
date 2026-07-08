@@ -132,6 +132,7 @@ func main() {
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/auth/login", authHandler.Login)
+		r.Post("/auth/totp/login", authHandler.TOTPLogin)
 		r.Post("/agent-checkin/projects", agentCheckinHandler.Projects)
 
 		r.Group(func(r chi.Router) {
@@ -141,6 +142,10 @@ func main() {
 			r.Get("/auth/me", authHandler.Me)
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Post("/auth/change-password", authHandler.ChangeOwnPassword)
+			r.Post("/auth/totp/enroll", authHandler.TOTPEnroll)
+			r.Post("/auth/totp/verify", authHandler.TOTPVerify)
+			r.Post("/auth/totp/disable", authHandler.TOTPDisable)
+			r.Delete("/users/{username}/totp", authHandler.TOTPResetUser)
 			r.Get("/users", authHandler.ListUsers)
 			r.Post("/users", authHandler.CreateUser)
 			r.Put("/users/{username}/password", authHandler.SetPassword)

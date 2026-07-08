@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auth, users, backup, projects, agents, schedules, registries, dockerSettings, ssl as sslApi, firewall as firewallApi } from '../api/client';
+import { auth, users, backup, projects, agents, schedules, registries, dockerSettings, ssl as sslApi, firewall as firewallApi, totp as totpApi } from '../api/client';
 import { getThemePreference, setThemePreference } from '../theme';
 import { buildDockerConfig, formFromDockerConfig, pruneMap } from '../utils/dockerSettings';
 
@@ -136,6 +136,10 @@ export default function Settings() {
   const [firewallIPForm, setFirewallIPForm] = useState({ ip: '', comment: '' });
   const [firewallMyIP, setFirewallMyIP] = useState('');
   const [firewallBusy, setFirewallBusy] = useState(false);
+  const [totpEnrolling, setTotpEnrolling] = useState(false);
+  const [totpEnrollData, setTotpEnrollData] = useState(null);
+  const [totpVerifyCode, setTotpVerifyCode] = useState('');
+  const [totpDisablePassword, setTotpDisablePassword] = useState('');
 
   const admin = me?.role === 'admin';
   const tabs = useMemo(() => {
@@ -889,6 +893,67 @@ export default function Settings() {
               </button>
             </div>
           </form>
+          <div className="section-panel">
+            <h2 className="text-lg font-semibold text-gray-950">Two-Factor Authentication (TOTP)</h2>
+            <p className="mt-1 text-sm text-gray-600">Protect your account with Google Authenticator, Authy, or any TOTP-compatible app.</p>
+            {me?.totp_enabled ? (
+              <div className="mt-3 space-y-3">
+                <div className="flex items-center gap-2 text-sm"><Badge tone="green">enabled</Badge> TOTP is active on your account.</div>
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <input type="password" className="input" placeholder="Enter your current password to disable" value={totpDisablePassword} onChange={e => setTotpDisablePassword(e.target.value)} />
+                  <button className="mini-danger" disabled={!totpDisablePassword} onClick={async () => {
+                    try {
+                      await totpApi.disable(totpDisablePassword);
+                      showMessage('TOTP disabled.');
+                      setTotpDisablePassword('');
+                      load();
+                    } catch (err) { showError(err); }
+                  }}>Disable 2FA</button>
+                </div>
+              </div>
+            ) : !totpEnrollData ? (
+              <div className="mt-3">
+                <button className="btn-primary" disabled={totpEnrolling} onClick={async () => {
+                  setTotpEnrolling(true);
+                  try {
+                    const res = await totpApi.enroll();
+                    setTotpEnrollData(res.data);
+                  } catch (err) { showError(err); }
+                  setTotpEnrolling(false);
+                }}>Set up 2FA</button>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-3">
+                <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                  <div className="font-medium">Scan this QR code with your authenticator app, or enter the secret manually.</div>
+                  <div className="mt-2">
+                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(totpEnrollData.otp_url)}`} alt="TOTP QR code" className="rounded" width={200} height={200} />
+                  </div>
+                  <div className="mt-2 break-all font-mono text-xs">{totpEnrollData.secret}</div>
+                </div>
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <div className="font-medium">Backup codes — save these somewhere safe</div>
+                  <div className="mt-2 grid grid-cols-4 gap-2 font-mono text-xs">
+                    {totpEnrollData.backup_codes?.map(code => <div key={code} className="rounded bg-white px-2 py-1 text-center">{code}</div>)}
+                  </div>
+                  <div className="mt-2 text-xs">Each backup code can be used once if you lose access to your authenticator app.</div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                  <input className="input text-center text-lg tracking-widest" maxLength={6} inputMode="numeric" placeholder="Enter 6-digit code to verify" value={totpVerifyCode} onChange={e => setTotpVerifyCode(e.target.value.replace(/\D/g, ''))} />
+                  <button className="btn-primary" disabled={totpVerifyCode.length !== 6} onClick={async () => {
+                    try {
+                      await totpApi.verify(totpVerifyCode);
+                      showMessage('TOTP enabled! Your account now requires a code at login.');
+                      setTotpEnrollData(null);
+                      setTotpVerifyCode('');
+                      load();
+                    } catch (err) { showError(err); }
+                  }}>Verify and Enable</button>
+                </div>
+                <button type="button" className="btn-secondary" onClick={() => { setTotpEnrollData(null); setTotpVerifyCode(''); }}>Cancel</button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

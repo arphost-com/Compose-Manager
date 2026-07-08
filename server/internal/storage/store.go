@@ -264,6 +264,9 @@ func (s *Store) Migrate(ctx context.Context) error {
 		`ALTER TABLE update_schedules ADD COLUMN time_of_day VARCHAR(5) NOT NULL DEFAULT '00:00' AFTER cadence`,
 		`ALTER TABLE update_schedules ADD COLUMN day_of_week TINYINT NOT NULL DEFAULT 0 AFTER time_of_day`,
 		`ALTER TABLE update_schedules ADD COLUMN day_of_month TINYINT NOT NULL DEFAULT 1 AFTER day_of_week`,
+		`ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64) NOT NULL DEFAULT '' AFTER role`,
+		`ALTER TABLE users ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT FALSE AFTER totp_secret`,
+		`ALTER TABLE users ADD COLUMN totp_backup_codes TEXT NULL AFTER totp_enabled`,
 	}
 	for _, stmt := range alterStmts {
 		_, err := s.DB.ExecContext(ctx, stmt)

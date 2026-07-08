@@ -49,6 +49,24 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If the user has TOTP enabled, don't issue a session yet — return
+	// totp_required so the frontend shows a code input. A short-lived
+	// "totp_pending" token lets the second POST (/auth/totp/login)
+	// finish the flow without re-sending the password.
+	if user.TOTPEnabled {
+		pending, err := h.Sessions.CreatePending(user)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"totp_required": true,
+			"totp_token":    pending.Token,
+			"user":          user,
+		})
+		return
+	}
+
 	session, err := h.Sessions.Create(user)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -62,6 +80,117 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		"expires_at": session.ExpiresAt.Format(time.RFC3339),
 		"user":       user,
 	})
+}
+
+// TOTPLogin completes the second step of the 2FA login flow.
+func (h *AuthHandler) TOTPLogin(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		TOTPToken string `json:"totp_token"`
+		Code      string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	pending, ok := h.Sessions.GetPending(body.TOTPToken)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "totp token expired or invalid — re-enter your password")
+		return
+	}
+	h.Sessions.DeletePending(body.TOTPToken)
+	if !h.Store.TOTPValidateCode(pending.User.Username, strings.TrimSpace(body.Code)) {
+		writeError(w, http.StatusUnauthorized, "invalid TOTP code")
+		return
+	}
+	session, err := h.Sessions.Create(pending.User)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	h.allowlistLoginIP(r, pending.User.Username)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"token":      session.Token,
+		"expires_at": session.ExpiresAt.Format(time.RFC3339),
+		"user":       pending.User,
+	})
+}
+
+// TOTPEnroll generates a new TOTP secret for the calling user.
+func (h *AuthHandler) TOTPEnroll(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.CurrentUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "not signed in")
+		return
+	}
+	secret, backupCodes, otpURL, err := h.Store.TOTPEnroll(user.Username)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"secret":       secret,
+		"backup_codes": backupCodes,
+		"otp_url":      otpURL,
+	})
+}
+
+// TOTPVerify checks a code and enables TOTP if correct.
+func (h *AuthHandler) TOTPVerify(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.CurrentUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "not signed in")
+		return
+	}
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := h.Store.TOTPVerifyAndEnable(user.Username, strings.TrimSpace(body.Code)); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"totp_enabled": true})
+}
+
+// TOTPDisable removes TOTP from the calling user's account.
+func (h *AuthHandler) TOTPDisable(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.CurrentUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "not signed in")
+		return
+	}
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if _, valid := h.Store.Authenticate(user.Username, body.Password); !valid {
+		writeError(w, http.StatusUnauthorized, "password incorrect")
+		return
+	}
+	if err := h.Store.TOTPDisable(user.Username); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"totp_enabled": false})
+}
+
+// TOTPResetUser lets an admin remove TOTP from another user's account.
+func (h *AuthHandler) TOTPResetUser(w http.ResponseWriter, r *http.Request) {
+	if !middleware.RequireAdmin(w, r) {
+		return
+	}
+	username := chi.URLParam(r, "username")
+	if err := h.Store.TOTPDisable(username); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"username": username, "totp": "disabled"})
 }
 
 // allowlistLoginIP fires off a best-effort CSF allow for the caller. It

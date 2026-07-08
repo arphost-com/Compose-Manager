@@ -88,6 +88,14 @@ async function download(path, filename) {
   URL.revokeObjectURL(url);
 }
 
+export const totp = {
+  enroll: () => request('/auth/totp/enroll', { method: 'POST' }),
+  verify: (code) => request('/auth/totp/verify', { method: 'POST', body: JSON.stringify({ code }) }),
+  disable: (password) => request('/auth/totp/disable', { method: 'POST', body: JSON.stringify({ password }) }),
+  login: (totpToken, code) => request('/auth/totp/login', { method: 'POST', body: JSON.stringify({ totp_token: totpToken, code }) }),
+  resetUser: (username) => request(`/users/${username}/totp`, { method: 'DELETE' }),
+};
+
 export const auth = {
   login: (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   logout: () => request('/auth/logout', { method: 'POST' }),
