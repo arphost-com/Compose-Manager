@@ -37,6 +37,7 @@ var editableKeys = map[string]struct{}{
 	"METRICS_REFRESH_MINUTES": {},
 	"WARM_CACHE_TTL_MINUTES": {},
 	"HOST_URL":               {},
+	"EXTRA_DOCKER_ROOTS":     {},
 }
 
 type envSettings struct {
@@ -46,6 +47,7 @@ type envSettings struct {
 	MetricsRefreshMin    string `json:"metrics_refresh_minutes"`
 	WarmCacheTTLMin      string `json:"warm_cache_ttl_minutes"`
 	HostURL              string `json:"host_url"`
+	ExtraDockerRoots     string `json:"extra_docker_roots"`
 	APIKeySet            bool   `json:"api_key_set"`
 }
 
@@ -61,6 +63,7 @@ func (h *EnvSettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		MetricsRefreshMin: valueOr(values, "METRICS_REFRESH_MINUTES", "15"),
 		WarmCacheTTLMin:   valueOr(values, "WARM_CACHE_TTL_MINUTES", "30"),
 		HostURL:           valueOr(values, "HOST_URL", ""),
+		ExtraDockerRoots:  valueOr(values, "EXTRA_DOCKER_ROOTS", ""),
 		APIKeySet:         values["API_KEY"] != "",
 	}
 	writeJSON(w, http.StatusOK, settings)

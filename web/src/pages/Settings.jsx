@@ -1030,6 +1030,14 @@ export default function Settings() {
             </Field>
           </div>
 
+          <div className="section-panel space-y-3">
+            <h2 className="text-lg font-semibold text-gray-950">Extra Docker Roots</h2>
+            <p className="text-sm text-gray-600">Discover projects in additional directories beyond the primary <code className="rounded bg-gray-100 px-1">DOCKER_ROOT</code>. Comma-separated absolute paths. Each extra root must be bind-mounted into the server container via a <code className="rounded bg-gray-100 px-1">compose.override.yml</code> for the server to access it. New projects are always created in the primary root.</p>
+            <Field label="EXTRA_DOCKER_ROOTS" title="Comma-separated list of additional directories to scan for compose projects." hint="e.g. /opt/stacks,/home/user/compose-projects">
+              <input className="input" value={generalForm.extra_docker_roots || ''} onChange={e => setGeneralForm({ ...generalForm, extra_docker_roots: e.target.value })} placeholder="/opt/stacks,/home/user/compose-projects" />
+            </Field>
+          </div>
+
           <div className="flex gap-2">
             <button className="btn-primary" onClick={saveGeneralSettings}>Save to .env</button>
             <button className="btn-secondary" onClick={loadGeneralSettings}>Reset</button>

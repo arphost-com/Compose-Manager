@@ -43,27 +43,52 @@ func sanitizeProjectName(name string) string {
 	return s
 }
 
-// DiscoverProjects finds all compose projects under root.
+// DiscoverProjects finds all compose projects under the primary root
+// and any configured extra roots.
 func (e *Engine) DiscoverProjects() ([]Project, error) {
-	if _, err := os.Stat(e.RootDir); os.IsNotExist(err) {
-		return nil, &ErrNotFound{Msg: "root directory does not exist: " + e.RootDir}
+	projects := make([]Project, 0)
+	seen := map[string]bool{}
+
+	for _, root := range e.AllRoots() {
+		found, err := e.discoverInRoot(root)
+		if err != nil {
+			continue
+		}
+		for _, p := range found {
+			if seen[p.Name] {
+				continue
+			}
+			seen[p.Name] = true
+			projects = append(projects, p)
+		}
+	}
+
+	if len(projects) == 0 {
+		if _, err := os.Stat(e.RootDir); os.IsNotExist(err) {
+			return nil, &ErrNotFound{Msg: "root directory does not exist: " + e.RootDir}
+		}
+	}
+
+	return projects, nil
+}
+
+func (e *Engine) discoverInRoot(rootDir string) ([]Project, error) {
+	if _, err := os.Stat(rootDir); os.IsNotExist(err) {
+		return nil, err
 	}
 
 	projects := make([]Project, 0)
 
-	// Check root dir itself
-	if cf := composeFileForDir(e.RootDir); cf != "" {
-		p := e.buildProject(e.RootDir, cf)
+	if cf := composeFileForDir(rootDir); cf != "" {
+		p := e.buildProject(rootDir, cf)
 		projects = append(projects, p)
 	}
 
-	// Check immediate subdirectories
-	entries, err := os.ReadDir(e.RootDir)
+	entries, err := os.ReadDir(rootDir)
 	if err != nil {
 		return nil, err
 	}
 
-	// Sort alphabetically
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Name() < entries[j].Name()
 	})
@@ -72,7 +97,7 @@ func (e *Engine) DiscoverProjects() ([]Project, error) {
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		dir := filepath.Join(e.RootDir, entry.Name())
+		dir := filepath.Join(rootDir, entry.Name())
 		cf := composeFileForDir(dir)
 		if cf == "" {
 			continue

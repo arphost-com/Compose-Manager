@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -12,6 +13,7 @@ type Config struct {
 	Mode                 string
 	Port                 int
 	Root                 string
+	ExtraRoots           []string
 	APIKey               string
 	AgentName            string
 	AgentToken           string
@@ -44,6 +46,7 @@ func Load() (*Config, error) {
 		Mode:               getEnv("APP_MODE", "server"),
 		Port:               port,
 		Root:               getEnv("ROOT", "/docker"),
+		ExtraRoots:         splitComma(getEnv("EXTRA_DOCKER_ROOTS", "")),
 		APIKey:             getEnv("API_KEY", ""),
 		AgentName:          getEnv("AGENT_NAME", ""),
 		AgentToken:         getEnv("AGENT_TOKEN", ""),
@@ -166,6 +169,20 @@ func hostnameFallback() string {
 		return name
 	}
 	return "compose-agent"
+}
+
+func splitComma(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var result []string
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 func databaseDSNFromEnv() string {

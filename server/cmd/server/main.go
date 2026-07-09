@@ -36,6 +36,7 @@ func main() {
 
 	// Core engine
 	engine := core.NewEngine(cfg.Root, cfg.HooksDir)
+	engine.ExtraRoots = cfg.ExtraRoots
 	if cfg.Mode == "agent-both" {
 		runAgentBoth(cfg, engine)
 		return

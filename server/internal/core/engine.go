@@ -18,8 +18,9 @@ func (e *ErrNotFound) Error() string { return e.Msg }
 
 // Engine is the core compose management engine.
 type Engine struct {
-	RootDir  string
-	HooksDir string
+	RootDir    string
+	ExtraRoots []string
+	HooksDir   string
 }
 
 // NewEngine creates a new Engine.
@@ -28,6 +29,18 @@ func NewEngine(rootDir, hooksDir string) *Engine {
 		RootDir:  rootDir,
 		HooksDir: hooksDir,
 	}
+}
+
+// AllRoots returns the primary root followed by any extra roots.
+func (e *Engine) AllRoots() []string {
+	roots := []string{e.RootDir}
+	for _, r := range e.ExtraRoots {
+		r = strings.TrimSpace(r)
+		if r != "" && r != e.RootDir {
+			roots = append(roots, r)
+		}
+	}
+	return roots
 }
 
 // GetProject returns a single project by name.
@@ -128,23 +141,30 @@ func (e *Engine) DeleteProject(name string, req DeleteProjectRequest) (*OpResult
 	if !project.Inactive {
 		return nil, fmt.Errorf("project must be marked inactive before it can be deleted")
 	}
-	rootAbs, err := filepath.Abs(e.RootDir)
-	if err != nil {
-		return nil, err
-	}
 	projectAbs, err := filepath.Abs(project.Dir)
 	if err != nil {
 		return nil, err
 	}
-	if projectAbs == rootAbs {
-		return nil, fmt.Errorf("refusing to delete the configured Docker root")
+	insideAnyRoot := false
+	for _, root := range e.AllRoots() {
+		rootAbs, err := filepath.Abs(root)
+		if err != nil {
+			continue
+		}
+		if projectAbs == rootAbs {
+			return nil, fmt.Errorf("refusing to delete the configured Docker root")
+		}
+		rel, err := filepath.Rel(rootAbs, projectAbs)
+		if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." || filepath.IsAbs(rel) {
+			continue
+		}
+		if !strings.Contains(rel, string(os.PathSeparator)) {
+			insideAnyRoot = true
+			break
+		}
 	}
-	rel, err := filepath.Rel(rootAbs, projectAbs)
-	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." || filepath.IsAbs(rel) {
-		return nil, fmt.Errorf("project directory is outside the configured Docker root")
-	}
-	if strings.Contains(rel, string(os.PathSeparator)) {
-		return nil, fmt.Errorf("project directory must be an immediate child of the configured Docker root")
+	if !insideAnyRoot {
+		return nil, fmt.Errorf("project directory is outside the configured Docker roots")
 	}
 
 	result := &OpResult{
