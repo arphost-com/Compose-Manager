@@ -291,6 +291,12 @@ cmd_install() {
       log "Added ports ${needs_add} to TCP_IN (now: ${new_tcp_in})"
     fi
 
+    # Open all outbound TCP and UDP — a Docker host needs unrestricted
+    # outbound for image pulls, DNS, package updates, API calls, etc.
+    sed -i 's/^TCP_OUT\s*=.*/TCP_OUT = "1:65535"/' "$CSF_ETC/csf.conf"
+    sed -i 's/^UDP_OUT\s*=.*/UDP_OUT = "1:65535"/' "$CSF_ETC/csf.conf"
+    log "Opened all outbound TCP and UDP (TCP_OUT/UDP_OUT = 1:65535)"
+
     # csfpre.sh — runs BEFORE csf flushes iptables.
     cat > "$CSF_ETC/csfpre.sh" << 'CSFPRE'
 #!/bin/bash
