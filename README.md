@@ -52,6 +52,8 @@ Existing catalog screenshots:
 ![Queue Catalog](docs/images/catalog-queue-light.png)
 ![Dev Tools Catalog](docs/images/catalog-devtools-light.png)
 
+![Project Detail — Backups](docs/images/project-detail-backups.png)
+
 <!-- Add more screenshots as you take them:
 ![Dashboard](docs/images/dashboard-dark.png)
 ![Project Detail](docs/images/project-detail.png)

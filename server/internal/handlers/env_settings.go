@@ -23,7 +23,8 @@ type EnvSettingsHandler struct {
 }
 
 func NewEnvSettingsHandler(stateDir string) *EnvSettingsHandler {
-	envFile := filepath.Join(filepath.Dir(stateDir), ".env")
+	// The .env file is bind-mounted into the server container at /app/.env.
+	envFile := "/app/.env"
 	if f := os.Getenv("ENV_FILE"); f != "" {
 		envFile = f
 	}
