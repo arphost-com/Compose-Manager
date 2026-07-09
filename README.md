@@ -124,8 +124,8 @@ docker compose version
 # Clone the dashboard/API project
 mkdir -p ~/docker
 cd ~/docker
-git clone https://github.com/arphost-com/Stack-Manager.git
-cd Stack-Manager
+git clone https://github.com/arphost-com/Stack-Manager.git stack-manager
+cd stack-manager
 
 # Generate .env, passwords, state directories, and printed login settings
 ./scripts/prepare-state.sh .env
@@ -440,8 +440,8 @@ Remote agents run as a container from `docker-compose.agent.yml` — the same im
 
 ```bash
 # 1. On the remote Docker host — clone the repo and prepare state.
-git clone https://github.com/arphost-com/Stack-Manager.git
-cd Stack-Manager
+git clone https://github.com/arphost-com/Stack-Manager.git stack-manager
+cd stack-manager
 ./scripts/prepare-state.sh --agent .env
 
 # 2. Edit .env: set DOCKER_ROOT to the directory that holds your compose

@@ -1015,7 +1015,7 @@ export default function Settings() {
                   { value: 'both', label: 'Both (combined)', appMode: 'agent-both', hint: 'Runs the inbound listener and the outbound check-in in the same container. Good for hosts that are sometimes reachable.' },
                 ];
                 const active = modes.find(m => m.value === setupMode) || modes[0];
-                const cmdPrepare = `git clone https://github.com/arphost-com/Stack-Manager.git\ncd Stack-Manager\n./scripts/prepare-state.sh --agent .env\n# Edit .env: set DOCKER_ROOT and AGENT_CONTROLLER_URL=${agentControllerHost}`;
+                const cmdPrepare = `git clone https://github.com/arphost-com/Stack-Manager.git stack-manager\ncd stack-manager\n./scripts/prepare-state.sh --agent .env\n# Edit .env: set DOCKER_ROOT and AGENT_CONTROLLER_URL=${agentControllerHost}`;
                 const cmdStart = `APP_MODE=${active.appMode} \\\ndocker compose --env-file .env -f docker-compose.agent.yml up -d --build`;
                 const cmdRegister = `grep -E '^(AGENT_NAME|AGENT_TOKEN|AGENT_PORT|DOCKER_ROOT|AGENT_CONTROLLER_URL)=' .env\n# Then in Settings > Agents, click Add Agent:\n#   Name  : value of AGENT_NAME\n#   Mode  : ${active.value === 'inbound' ? 'Inbound URL' : active.value === 'both' ? 'Inbound URL (or Outbound check-in)' : 'Outbound check-in'}\n#   URL   : ${active.value === 'callback' ? '(leave blank)' : 'https://<agent-host>:${AGENT_PORT}'}\n#   Token : value of AGENT_TOKEN`;
                 const cards = [
