@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { projects, stackTemplates } from '../api/client';
 
 const CATEGORY_LABELS = {
@@ -293,7 +293,7 @@ export default function StackCatalog() {
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
         {pagedTemplates.map(template => (
-          <button key={template.id} type="button" onClick={() => openTemplate(template)} className="min-w-0 rounded-md border border-gray-200 bg-white p-4 text-left text-sm shadow-sm hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200" title={`${template.name} — click to open the editor and spin it up.`}>
+          <div key={template.id} role="button" tabIndex={0} onClick={() => openTemplate(template)} onKeyDown={e => { if (e.key === 'Enter') openTemplate(template); }} className="flex min-w-0 cursor-pointer flex-col rounded-md border border-gray-200 bg-white p-4 text-left text-sm shadow-sm hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200" title={`${template.name} — click to open the editor and spin it up.`}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium text-gray-950" title={template.name}>{template.name}</div>
@@ -307,8 +307,11 @@ export default function StackCatalog() {
             <div className="mt-3 flex flex-wrap gap-1">
               {(template.tags || []).map(tag => <Badge key={tag} tone="cyan">{tag}</Badge>)}
             </div>
-            {template.image && <div className="mt-3 min-w-0 break-all font-mono text-xs text-gray-500">{template.image}</div>}
-          </button>
+            <div className="mt-3 flex items-end justify-between gap-2">
+              {template.image ? <div className="min-w-0 break-all font-mono text-xs text-gray-500">{template.image}</div> : <div />}
+              <Link to={`/documentation?search=${encodeURIComponent(template.name)}`} onClick={e => e.stopPropagation()} className="shrink-0 text-xs text-blue-600 underline hover:text-blue-800" title={`View documentation for ${template.name}`}>Docs</Link>
+            </div>
+          </div>
         ))}
         {filtered.length === 0 && <div className="py-12 text-center text-sm text-gray-500 md:col-span-2 xl:col-span-3 2xl:col-span-4">No templates match the current filters.</div>}
       </div>
