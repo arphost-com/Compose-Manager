@@ -106,6 +106,7 @@ func main() {
 	watchHandler := handlers.NewWatchHandler(watchManager)
 	skillHandler := handlers.NewSkillHandler(registry)
 	shellHandler := handlers.NewShellHandler(engine)
+	envSettingsHandler := handlers.NewEnvSettingsHandler(cfg.StateDir)
 	authHandler := handlers.NewAuthHandler(userStore, sessionManager)
 	authHandler.IPAllower = firewallSkill
 
@@ -209,6 +210,11 @@ func main() {
 			r.Post("/metrics/refresh", metricsHandler.Refresh)
 			r.Get("/docker/daemon", dockerSettingsHandler.GetDaemon)
 			r.Put("/docker/daemon", dockerSettingsHandler.SaveDaemon)
+
+			// General settings (.env)
+			r.Get("/settings/env", envSettingsHandler.Get)
+			r.Put("/settings/env", envSettingsHandler.Save)
+			r.Post("/settings/env/roll-api-key", envSettingsHandler.RollAPIKey)
 
 			// SSL / TLS settings
 			r.Get("/settings/ssl", sslHandler.Get)

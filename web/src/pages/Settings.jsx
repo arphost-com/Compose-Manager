@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auth, users, backup, projects, agents, schedules, registries, dockerSettings, ssl as sslApi, firewall as firewallApi, totp as totpApi } from '../api/client';
+import { auth, users, backup, projects, agents, schedules, registries, dockerSettings, ssl as sslApi, firewall as firewallApi, totp as totpApi, envSettings } from '../api/client';
 import { getThemePreference, setThemePreference } from '../theme';
 import { buildDockerConfig, formFromDockerConfig, pruneMap } from '../utils/dockerSettings';
 
@@ -136,6 +136,9 @@ export default function Settings() {
   const [firewallIPForm, setFirewallIPForm] = useState({ ip: '', comment: '' });
   const [firewallMyIP, setFirewallMyIP] = useState('');
   const [firewallBusy, setFirewallBusy] = useState(false);
+  const [generalSettings, setGeneralSettings] = useState(null);
+  const [generalForm, setGeneralForm] = useState({});
+  const [rolledAPIKey, setRolledAPIKey] = useState('');
   const [totpEnrolling, setTotpEnrolling] = useState(false);
   const [totpEnrollData, setTotpEnrollData] = useState(null);
   const [totpVerifyCode, setTotpVerifyCode] = useState('');
@@ -147,6 +150,7 @@ export default function Settings() {
     if (!admin) return base;
     return [
       ...base,
+      { key: 'general', label: 'General', title: 'Ports, cache, API key, and host settings.' },
       { key: 'users', label: 'Users', title: 'Manage dashboard users and passwords.' },
       { key: 'agents', label: 'Agents', title: 'Register and edit remote Stack Manager agents.' },
       { key: 'schedules', label: 'Scheduled Updates', title: 'Schedule local or agent project updates.' },
@@ -199,6 +203,36 @@ export default function Settings() {
   useEffect(() => {
     if (admin && activeTab === 'registries') loadSavedRegistries();
   }, [admin, activeTab]);
+
+  useEffect(() => {
+    if (admin && activeTab === 'general') loadGeneralSettings();
+  }, [admin, activeTab]);
+
+  const loadGeneralSettings = async () => {
+    try {
+      const res = await envSettings.get();
+      setGeneralSettings(res.data);
+      setGeneralForm(res.data);
+      setRolledAPIKey('');
+    } catch (err) { showError(err); }
+  };
+
+  const saveGeneralSettings = async () => {
+    try {
+      const res = await envSettings.save(generalForm);
+      showMessage('Settings saved. ' + (res.data?.warnings?.join(' ') || ''));
+      loadGeneralSettings();
+    } catch (err) { showError(err); }
+  };
+
+  const rollAPIKey = async () => {
+    if (!window.confirm('Generate a new API key? Existing API-key scripts will need the new value. Session-based logins are not affected.')) return;
+    try {
+      const res = await envSettings.rollAPIKey();
+      setRolledAPIKey(res.data?.api_key || '');
+      showMessage(res.data?.warning || 'API key rolled.');
+    } catch (err) { showError(err); }
+  };
 
   useEffect(() => {
     if (admin && activeTab === 'firewall') loadFirewall();
@@ -954,6 +988,66 @@ export default function Settings() {
                 <button type="button" className="btn-secondary" onClick={() => { setTotpEnrollData(null); setTotpVerifyCode(''); }}>Cancel</button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {admin && activeTab === 'general' && generalSettings && (
+        <div className="space-y-4">
+          <div className="section-panel space-y-3">
+            <h2 className="text-lg font-semibold text-gray-950">Ports</h2>
+            <p className="text-sm text-gray-600">Change the host ports Stack Manager listens on. Port changes require a full <code className="rounded bg-gray-100 px-1">docker compose --env-file .env up -d</code> restart — the browser URL will change.</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="HTTPS port (WEB_SSL_PORT)" title="Host port for HTTPS. Default 8993. Set to 443 for standard HTTPS." hint="Default: 8993">
+                <input className="input" type="number" min="1" max="65535" value={generalForm.web_ssl_port || ''} onChange={e => setGeneralForm({ ...generalForm, web_ssl_port: e.target.value })} />
+              </Field>
+              <Field label="HTTP port (WEB_HTTP_PORT)" title="Host port for HTTP redirect and ACME challenges. Set to 80 for Let's Encrypt, 0 to disable." hint="Default: 8193. Set 0 to disable.">
+                <input className="input" type="number" min="0" max="65535" value={generalForm.web_http_port || ''} onChange={e => setGeneralForm({ ...generalForm, web_http_port: e.target.value })} />
+              </Field>
+            </div>
+          </div>
+
+          <div className="section-panel space-y-3">
+            <h2 className="text-lg font-semibold text-gray-950">Cache and Refresh</h2>
+            <p className="text-sm text-gray-600">Control how frequently the server re-discovers projects and how long cached data lives. Lower values show changes faster; higher values reduce Docker API load. Changes take effect on next server restart.</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label="Cache TTL (seconds)" title="How long project/image/job reads stay in Redis before refresh." hint="Default: 15">
+                <input className="input" type="number" min="1" value={generalForm.cache_ttl_seconds || ''} onChange={e => setGeneralForm({ ...generalForm, cache_ttl_seconds: e.target.value })} />
+              </Field>
+              <Field label="Metrics refresh (minutes)" title="Background interval for project cache warmup, stats snapshots, and metrics history." hint="Default: 15. Minimum: 15.">
+                <input className="input" type="number" min="15" value={generalForm.metrics_refresh_minutes || ''} onChange={e => setGeneralForm({ ...generalForm, metrics_refresh_minutes: e.target.value })} />
+              </Field>
+              <Field label="Warm cache TTL (minutes)" title="Redis TTL for background-warmed project and image-source caches." hint="Default: 30">
+                <input className="input" type="number" min="1" value={generalForm.warm_cache_ttl_minutes || ''} onChange={e => setGeneralForm({ ...generalForm, warm_cache_ttl_minutes: e.target.value })} />
+              </Field>
+            </div>
+          </div>
+
+          <div className="section-panel space-y-3">
+            <h2 className="text-lg font-semibold text-gray-950">Host URL</h2>
+            <Field label="HOST_URL" title="The public URL printed in setup output and used in agent setup commands." hint="e.g. https://docker02:8993">
+              <input className="input" value={generalForm.host_url || ''} onChange={e => setGeneralForm({ ...generalForm, host_url: e.target.value })} placeholder="https://your-host:8993" />
+            </Field>
+          </div>
+
+          <div className="flex gap-2">
+            <button className="btn-primary" onClick={saveGeneralSettings}>Save to .env</button>
+            <button className="btn-secondary" onClick={loadGeneralSettings}>Reset</button>
+          </div>
+
+          <div className="section-panel space-y-3 border-amber-200 bg-amber-50">
+            <h2 className="text-lg font-semibold text-amber-900">API Key</h2>
+            <p className="text-sm text-amber-900">Generate a new API key. The old key stops working on the next server restart. Session-based browser logins are not affected.</p>
+            <div className="flex items-center gap-2">
+              <button className="mini-danger" onClick={rollAPIKey}>Roll API Key</button>
+              {rolledAPIKey && (
+                <div className="flex items-center gap-2">
+                  <code className="rounded bg-white px-2 py-1 font-mono text-xs text-gray-800 break-all">{rolledAPIKey}</code>
+                  <button className="mini-button" onClick={() => { navigator.clipboard?.writeText(rolledAPIKey); showMessage('Copied'); }}>Copy</button>
+                </div>
+              )}
+            </div>
+            {rolledAPIKey && <p className="text-xs text-amber-800">Save this key — it will not be shown again. Restart the server to activate it.</p>}
           </div>
         </div>
       )}

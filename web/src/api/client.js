@@ -243,6 +243,12 @@ export const dockerSettings = {
   saveDaemon: (body) => request('/docker/daemon', { method: 'PUT', body: JSON.stringify(body) }),
 };
 
+export const envSettings = {
+  get: () => request('/settings/env'),
+  save: (body) => request('/settings/env', { method: 'PUT', body: JSON.stringify(body) }),
+  rollAPIKey: () => request('/settings/env/roll-api-key', { method: 'POST' }),
+};
+
 export const ssl = {
   get: () => request('/settings/ssl'),
   regenerateSelfSigned: (body) => request('/settings/ssl/self-signed', { method: 'POST', body: JSON.stringify(body) }),
