@@ -294,7 +294,7 @@ if command -v docker >/dev/null 2>&1; then
     if [ "${has_dns}" -eq 0 ]; then
       printf '%s\n' "Detected systemd-resolved stub (${resolv_ns}). Adding public DNS to ${docker_daemon_json} so Docker containers can resolve hostnames."
       if command -v python3 >/dev/null 2>&1; then
-        python3 -c "
+        sudo python3 -c "
 import json, os
 path = '${docker_daemon_json}'
 d = {}
@@ -303,16 +303,16 @@ if os.path.exists(path):
 d.setdefault('dns', ['8.8.8.8', '1.1.1.1'])
 os.makedirs(os.path.dirname(path), exist_ok=True)
 with open(path, 'w') as f: json.dump(d, f, indent=2)
-"
+" 2>/dev/null || printf '%s\n' "WARNING: Could not write ${docker_daemon_json} (need sudo). Run: sudo python3 -c \"import json; d=json.load(open('${docker_daemon_json}')); d['dns']=['8.8.8.8','1.1.1.1']; json.dump(d,open('${docker_daemon_json}','w'),indent=2)\""
       else
         # Minimal fallback without python3.
         if [ ! -f "${docker_daemon_json}" ]; then
-          mkdir -p "$(dirname "${docker_daemon_json}")"
-          printf '{"dns":["8.8.8.8","1.1.1.1"]}\n' > "${docker_daemon_json}"
+          sudo mkdir -p "$(dirname "${docker_daemon_json}")" 2>/dev/null
+          printf '{"dns":["8.8.8.8","1.1.1.1"]}\n' | sudo tee "${docker_daemon_json}" >/dev/null 2>/dev/null || printf '%s\n' "WARNING: Could not write ${docker_daemon_json} (need sudo)."
         fi
       fi
       if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet docker 2>/dev/null; then
-        systemctl restart docker
+        sudo systemctl restart docker 2>/dev/null || systemctl restart docker 2>/dev/null || true
         printf '%s\n' "Docker restarted with public DNS."
       fi
     fi
