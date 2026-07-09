@@ -4,12 +4,33 @@ set -eu
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 project_root="$(dirname "${script_dir}")"
 agent_mode=0
-case "${1:-}" in
-  --agent)
-    agent_mode=1
-    shift
-    ;;
-esac
+agent_app_mode=""
+# Parse leading flags. --agent enables agent mode; --mode selects which agent
+# APP_MODE to write into .env so the start command needs no APP_MODE override.
+while :; do
+  case "${1:-}" in
+    --agent)
+      agent_mode=1
+      shift
+      ;;
+    --mode | --app-mode)
+      shift
+      case "${1:-}" in
+        callback | agent-callback) agent_app_mode="agent-callback" ;;
+        inbound | agent) agent_app_mode="agent" ;;
+        both | agent-both) agent_app_mode="agent-both" ;;
+        *)
+          printf 'Unknown agent mode: %s (use callback | inbound | both)\n' "${1:-}" >&2
+          exit 1
+          ;;
+      esac
+      shift
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 env_file="${1:-${project_root}/.env}"
 example_env="${project_root}/.env.example"
 case "${env_file}" in
@@ -142,8 +163,9 @@ fi
 
 if [ "${agent_mode}" -eq 1 ]; then
   # APP_MODE must be force-set because .env.example ships with
-  # APP_MODE=server which ensure_setting would not overwrite.
-  set_env_value APP_MODE agent-callback
+  # APP_MODE=server which ensure_setting would not overwrite. Honour --mode
+  # (callback|inbound|both); default to outbound check-in when not specified.
+  set_env_value APP_MODE "${agent_app_mode:-agent-callback}"
   ensure_setting AGENT_NAME "$(detect_agent_name)"
   ensure_secret AGENT_TOKEN
   ensure_setting AGENT_PORT 8192
@@ -395,6 +417,8 @@ if [ "${agent_mode}" -eq 1 ]; then
   printf '\n'
   printf 'Agent name:  %s\n' "$(env_value AGENT_NAME)"
   printf 'Agent token: %s\n' "$(env_value AGENT_TOKEN)"
+  printf 'App mode:    %s\n' "$(env_value APP_MODE)"
+  printf 'Agent port:  %s\n' "$(env_value AGENT_PORT)"
   printf 'Controller:  %s\n' "${controller_url}"
   printf '\n'
   if printf '%s' "${controller_url}" | grep -q 'change-me'; then
@@ -403,7 +427,10 @@ if [ "${agent_mode}" -eq 1 ]; then
     printf '  Example: AGENT_CONTROLLER_URL=https://10.10.10.93:8993\n'
     printf '\n'
   fi
-  printf 'Register from the controller: Settings > Agents.\n'
+  printf 'Start the agent (APP_MODE is already set in .env):\n'
+  printf '  docker compose --env-file .env -f docker-compose.agent.yml up -d --build\n'
+  printf '\n'
+  printf 'Then register from the controller: Settings > Agents.\n'
 else
   printf 'Stack Manager is ready.\n'
   printf '\n'
