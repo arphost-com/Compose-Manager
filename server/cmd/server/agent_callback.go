@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,8 +36,15 @@ func runAgentCallbackLoop(ctx context.Context, cfg *config.Config, engine *core.
 	if err != nil {
 		log.Fatalf("agent callback config: %v", err)
 	}
+	// Accept self-signed certs from the controller — most Stack Manager
+	// installs use auto-generated self-signed TLS. The agent token
+	// provides authentication; TLS provides encryption even with an
+	// untrusted cert.
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // intentional for self-signed controllers
+		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
