@@ -60,6 +60,10 @@ export default function ProjectDetail() {
   const [shellForm, setShellForm] = useState({ command: 'ps', tail: 200, timeout: 300 });
   const [shellResult, setShellResult] = useState(null);
   const startupJobRef = useRef('');
+  // Tracks the last location.search we applied a tab from, so the URL effect
+  // fires only on real URL changes — not every time activeTab changes (which
+  // used to snap the user back to the URL's ?tab= value on any tab click).
+  const appliedSearchRef = useRef(null);
 
   const fetchProject = async () => {
     try {
@@ -91,11 +95,16 @@ export default function ProjectDetail() {
   }, [location.search]);
 
   useEffect(() => {
+    // Only react to genuine URL changes. Keying off activeTab here caused the
+    // tab bar to be unusable: clicking a tab set activeTab, re-ran this effect,
+    // and the still-present ?tab= in the URL yanked the user back.
+    if (appliedSearchRef.current === location.search) return;
+    appliedSearchRef.current = location.search;
     const params = new URLSearchParams(location.search);
     if (params.get('job')) return;
     const tab = params.get('tab');
-    if (tab && TABS.includes(tab) && tab !== activeTab) loadTab(tab);
-  }, [location.search, name, activeTab]);
+    if (tab && TABS.includes(tab)) loadTab(tab);
+  }, [location.search]);
 
   useEffect(() => {
     if (activeTab !== 'logs' || !logOptions.watch) return undefined;
@@ -133,6 +142,19 @@ export default function ProjectDetail() {
     } finally {
       setTabLoading(false);
     }
+  };
+
+  // Tab clicks go through here so the URL's ?tab= stays in sync with the view
+  // (reloads and bookmarks land on the right tab). We preempt appliedSearchRef
+  // to the new search string so the URL effect doesn't re-load the same tab.
+  const selectTab = (tab) => {
+    const params = new URLSearchParams(location.search);
+    params.delete('job');
+    if (tab === 'overview') params.delete('tab'); else params.set('tab', tab);
+    const search = params.toString() ? `?${params.toString()}` : '';
+    appliedSearchRef.current = search;
+    loadTab(tab);
+    navigate(`${location.pathname}${search}`, { replace: true });
   };
 
   const runAction = async (action) => {
@@ -319,7 +341,7 @@ export default function ProjectDetail() {
       <div className="section-panel">
         <div className="flex flex-wrap gap-1 border-b border-gray-200 pb-3">
           {TABS.map(tab => (
-            <button key={tab} title={tabTitle(tab)} onClick={() => loadTab(tab)} className={`rounded-md px-3 py-1.5 text-sm capitalize ${activeTab === tab ? 'bg-blue-700 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
+            <button key={tab} title={tabTitle(tab)} onClick={() => selectTab(tab)} className={`rounded-md px-3 py-1.5 text-sm capitalize ${activeTab === tab ? 'bg-blue-700 text-white' : 'text-gray-700 hover:bg-gray-100'}`}>
               {tab}
             </button>
           ))}
@@ -932,6 +954,7 @@ function Backups({ data, projectName, reload, setActionResult }) {
     }
   };
   const restoreBackup = async (id) => {
+    if (!window.confirm(`Restore ${projectName} from backup ${id}?\n\nThis stops the running containers and overwrites the current project directory with the backup contents. This cannot be undone.`)) return;
     try {
       setActionResult({ status: 'running', label: `restore ${id}` });
       const res = await backup.restore(projectName, id);
@@ -942,6 +965,7 @@ function Backups({ data, projectName, reload, setActionResult }) {
     }
   };
   const deleteBackup = async (id) => {
+    if (!window.confirm(`Permanently delete backup ${id}?\n\nThe archive is removed from the Stack Manager server and cannot be recovered.`)) return;
     try {
       setActionResult({ status: 'running', label: `delete ${id}` });
       const res = await backup.delete(id);

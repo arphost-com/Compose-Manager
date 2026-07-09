@@ -235,6 +235,7 @@ export default function Dashboard() {
   const [timeout, setTimeoutValue] = useState(300);
   const [pruneMode, setPruneMode] = useState('safe');
   const [showPruneMenu, setShowPruneMenu] = useState(false);
+  const pruneMenuRef = useRef(null);
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
     name: '',
@@ -352,6 +353,15 @@ export default function Dashboard() {
     }
   }, [filters.includeInactive, filters.runningOnly, serverSource]);
 
+  useEffect(() => {
+    if (!showPruneMenu) return undefined;
+    const onDown = (e) => { if (pruneMenuRef.current && !pruneMenuRef.current.contains(e.target)) setShowPruneMenu(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setShowPruneMenu(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [showPruneMenu]);
+
   const filteredProjects = projectList.filter((p) => {
     const q = filters.query.trim().toLowerCase();
     if (q && !p.name.toLowerCase().includes(q) && !p.dir.toLowerCase().includes(q)) return false;
@@ -424,6 +434,16 @@ export default function Dashboard() {
     if (targets.length === 0) {
       setActionResult({ label: `bulk ${action}`, status: 'error', error: action === 'update' || action === 'pull' ? 'No checked projects have available updates.' : 'No projects selected.' });
       return;
+    }
+    // Confirm disruptive bulk actions. `down` stops containers; `restart`
+    // bounces them. When nothing is explicitly checked, targets defaults to the
+    // whole filtered list, so a single click could hit every project — spell out
+    // the count and whether it's an implicit select-all.
+    const implicitAll = selected.length === 0;
+    if (action === 'down' || action === 'restart') {
+      const verb = action === 'down' ? 'Stop (compose down)' : 'Restart';
+      const scope = implicitAll ? `all ${targets.length}` : `${targets.length} selected`;
+      if (!window.confirm(`${verb} ${scope} project${targets.length === 1 ? '' : 's'}?${implicitAll ? '\n\nNothing is checked, so this applies to every project in the current view.' : ''}`)) return;
     }
     markPending(key, true);
     try {
@@ -590,15 +610,27 @@ export default function Dashboard() {
     }
   };
 
-  const runPrune = async () => {
-    if (pruneMode === 'system-all' && !window.confirm('Run docker system prune --all --volumes? This removes unused images, build cache, networks, and volumes.')) return;
+  const runPrune = async (overrideMode) => {
+    // Picking a mode from the dropdown runs it directly (overrideMode); the main
+    // split button re-runs the last-selected mode. Every prune mode removes
+    // something unrecoverable, and volume-touching modes delete named volumes of
+    // any currently-stopped project, so confirm all of them with a specific note.
+    const modeKey = overrideMode || pruneMode;
+    if (overrideMode) setPruneMode(overrideMode);
+    const mode = PRUNE_MODES.find(m => m.key === modeKey);
+    const touchesVolumes = ['safe', 'system-all', 'volumes'].includes(modeKey);
+    const msg = `Run "${mode?.label || modeKey}" on this host?\n\n`
+      + (touchesVolumes
+        ? 'This removes unused Docker volumes — any project that is currently stopped will lose its named-volume data. This cannot be undone.'
+        : 'This permanently removes the selected unused Docker resources and cannot be undone.');
     setShowPruneMenu(false);
-    setActionResult({ label: 'system prune', status: 'running' });
+    if (!window.confirm(msg)) return;
+    setActionResult({ label: `prune: ${mode?.label || modeKey}`, status: 'running' });
     try {
-      const res = await system.prune(pruneMode);
-      setActionResult({ label: 'system prune', status: 'done', result: res.data });
+      const res = await system.prune(modeKey);
+      setActionResult({ label: `prune: ${mode?.label || modeKey}`, status: 'done', result: res.data });
     } catch (err) {
-      setActionResult({ label: 'system prune', status: 'error', error: err.message });
+      setActionResult({ label: `prune: ${mode?.label || modeKey}`, status: 'error', error: err.message });
     }
   };
 
@@ -757,8 +789,8 @@ export default function Dashboard() {
             Refresh
           </button>
           <button title="Create a new project directory with a compose.yml file." onClick={() => setShowCreate(!showCreate)} className="btn-primary">Create Project</button>
-          <div className="relative inline-flex">
-            <button title={`Run ${PRUNE_MODES.find(mode => mode.key === pruneMode)?.label || 'selected prune command'} on this host.`} onClick={runPrune} className="rounded-l-md bg-red-700 px-3 py-2 text-sm font-medium text-white hover:bg-red-600">
+          <div className="relative inline-flex" ref={pruneMenuRef}>
+            <button title={`Run ${PRUNE_MODES.find(mode => mode.key === pruneMode)?.label || 'selected prune command'} on this host.`} onClick={() => runPrune()} className="rounded-l-md bg-red-700 px-3 py-2 text-sm font-medium text-white hover:bg-red-600">
               Prune
             </button>
             <button type="button" title="Choose a Docker prune command." onClick={() => setShowPruneMenu(!showPruneMenu)} className="rounded-r-md border-l border-red-500 bg-red-700 px-2 py-2 text-sm font-medium text-white hover:bg-red-600" aria-haspopup="menu" aria-expanded={showPruneMenu}>
@@ -771,10 +803,7 @@ export default function Dashboard() {
                     key={mode.key}
                     type="button"
                     title={mode.title}
-                    onClick={() => {
-                      setPruneMode(mode.key);
-                      setShowPruneMenu(false);
-                    }}
+                    onClick={() => runPrune(mode.key)}
                     className={`flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-gray-100 ${pruneMode === mode.key ? 'bg-gray-100 text-blue-700' : 'text-gray-800'}`}
                     role="menuitem"
                   >

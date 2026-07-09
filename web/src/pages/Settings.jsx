@@ -1051,7 +1051,11 @@ export default function Settings() {
                 <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
                   <div className="font-medium">Scan this QR code with your authenticator app, or enter the secret manually.</div>
                   <div className="mt-2">
-                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(totpEnrollData.otp_url)}`} alt="TOTP QR code" className="rounded" width={200} height={200} />
+                    {totpEnrollData.qr_data_uri ? (
+                      <img src={totpEnrollData.qr_data_uri} alt="TOTP QR code" className="rounded bg-white p-1" width={200} height={200} />
+                    ) : (
+                      <div className="text-xs text-blue-900">QR image unavailable — enter the secret below into your authenticator app manually.</div>
+                    )}
                   </div>
                   <div className="mt-2 break-all font-mono text-xs">{totpEnrollData.secret}</div>
                 </div>

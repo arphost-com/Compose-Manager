@@ -119,21 +119,21 @@ export const projects = {
     return request(`/projects${qs ? '?' + qs : ''}`);
   },
   create: (body) => request('/projects', { method: 'POST', body: JSON.stringify(body) }),
-  delete: (name, body) => request(`/projects/${name}`, { method: 'DELETE', body: JSON.stringify(body) }),
-  get: (name) => request(`/projects/${name}`),
+  delete: (name, body) => request(`/projects/${encodeURIComponent(name)}`, { method: 'DELETE', body: JSON.stringify(body) }),
+  get: (name) => request(`/projects/${encodeURIComponent(name)}`),
   docs: (name) => request(`/projects/${encodeURIComponent(name)}/docs`),
   docContent: (name, path) => request(`/projects/${encodeURIComponent(name)}/docs/content?path=${encodeURIComponent(path)}`),
-  images: (name) => request(`/projects/${name}/images`),
-  status: (name) => request(`/projects/${name}/status`),
-  pull: (name, timeout) => request(`/projects/${name}/pull${timeout ? '?timeout=' + timeout : ''}`, { method: 'POST' }),
-  up: (name) => request(`/projects/${name}/up`, { method: 'POST' }),
-  down: (name) => request(`/projects/${name}/down`, { method: 'POST' }),
-  update: (name, timeout) => request(`/projects/${name}/update${timeout ? '?timeout=' + timeout : ''}`, { method: 'POST' }),
-  restart: (name) => request(`/projects/${name}/restart`, { method: 'POST' }),
-  startJob: (name, action, timeout) => request(`/projects/${name}/jobs/${action}${timeout ? '?timeout=' + timeout : ''}`, { method: 'POST' }),
-  updatePolicy: (name) => request(`/projects/${name}/update-policy`),
-  setUpdatePolicy: (name, body) => request(`/projects/${name}/update-policy`, { method: 'PUT', body: JSON.stringify(body) }),
-  setInactive: (name, inactive) => request(`/projects/${name}/inactive`, { method: 'PUT', body: JSON.stringify({ inactive }) }),
+  images: (name) => request(`/projects/${encodeURIComponent(name)}/images`),
+  status: (name) => request(`/projects/${encodeURIComponent(name)}/status`),
+  pull: (name, timeout) => request(`/projects/${encodeURIComponent(name)}/pull${timeout ? '?timeout=' + timeout : ''}`, { method: 'POST' }),
+  up: (name) => request(`/projects/${encodeURIComponent(name)}/up`, { method: 'POST' }),
+  down: (name) => request(`/projects/${encodeURIComponent(name)}/down`, { method: 'POST' }),
+  update: (name, timeout) => request(`/projects/${encodeURIComponent(name)}/update${timeout ? '?timeout=' + timeout : ''}`, { method: 'POST' }),
+  restart: (name) => request(`/projects/${encodeURIComponent(name)}/restart`, { method: 'POST' }),
+  startJob: (name, action, timeout) => request(`/projects/${encodeURIComponent(name)}/jobs/${encodeURIComponent(action)}${timeout ? '?timeout=' + timeout : ''}`, { method: 'POST' }),
+  updatePolicy: (name) => request(`/projects/${encodeURIComponent(name)}/update-policy`),
+  setUpdatePolicy: (name, body) => request(`/projects/${encodeURIComponent(name)}/update-policy`, { method: 'PUT', body: JSON.stringify(body) }),
+  setInactive: (name, inactive) => request(`/projects/${encodeURIComponent(name)}/inactive`, { method: 'PUT', body: JSON.stringify({ inactive }) }),
   bulk: (action, body) => request(`/projects/bulk/${action}`, { method: 'POST', body: JSON.stringify(body) }),
   files: (name) => request(`/projects/${encodeURIComponent(name)}/files`),
   fileContent: (name, path) => request(`/projects/${encodeURIComponent(name)}/files/content?path=${encodeURIComponent(path)}`),
@@ -185,8 +185,8 @@ export const skills = {
 };
 
 export const security = {
-  scan: (name) => request(`/skills/security/scan/${name}`),
-  audit: (name) => request(`/skills/security/audit/${name}`),
+  scan: (name) => request(`/skills/security/scan/${encodeURIComponent(name)}`),
+  audit: (name) => request(`/skills/security/audit/${encodeURIComponent(name)}`),
   report: () => request('/skills/security/report'),
 };
 
@@ -194,22 +194,22 @@ export const debug = {
   logs: (name, tail = 100, container) => {
     const params = new URLSearchParams({ tail: String(tail) });
     if (container) params.set('container', container);
-    return request(`/skills/debug/logs/${name}?${params}`);
+    return request(`/skills/debug/logs/${encodeURIComponent(name)}?${params}`);
   },
-  shell: (name, body) => request(`/skills/debug/shell/${name}`, { method: 'POST', body: JSON.stringify(body) }),
-  inspect: (name) => request(`/skills/debug/inspect/${name}`),
-  stats: (name) => request(`/skills/debug/stats/${name}`),
+  shell: (name, body) => request(`/skills/debug/shell/${encodeURIComponent(name)}`, { method: 'POST', body: JSON.stringify(body) }),
+  inspect: (name) => request(`/skills/debug/inspect/${encodeURIComponent(name)}`),
+  stats: (name) => request(`/skills/debug/stats/${encodeURIComponent(name)}`),
   events: (since = '1h', limit = 50) => request(`/skills/debug/events?since=${since}&limit=${limit}`),
-  top: (name) => request(`/skills/debug/top/${name}`),
+  top: (name) => request(`/skills/debug/top/${encodeURIComponent(name)}`),
 };
 
 export const backup = {
-  create: (name, body = {}) => request(`/skills/backup/create/${name}`, { method: 'POST', body: JSON.stringify(body) }),
+  create: (name, body = {}) => request(`/skills/backup/create/${encodeURIComponent(name)}`, { method: 'POST', body: JSON.stringify(body) }),
   list: () => request('/skills/backup/list'),
-  listProject: (name) => request(`/skills/backup/list/${name}`),
+  listProject: (name) => request(`/skills/backup/list/${encodeURIComponent(name)}`),
   download: (id) => download(`/skills/backup/download/${encodeURIComponent(id)}`, id),
-  restore: (name, backupId) => request(`/skills/backup/restore/${name}/${backupId}`, { method: 'POST' }),
-  delete: (id) => request(`/skills/backup/${id}`, { method: 'DELETE' }),
+  restore: (name, backupId) => request(`/skills/backup/restore/${encodeURIComponent(name)}/${encodeURIComponent(backupId)}`, { method: 'POST' }),
+  delete: (id) => request(`/skills/backup/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   destinations: () => request('/skills/backup/destinations'),
   saveDestination: (body) => request('/skills/backup/destinations', { method: 'POST', body: JSON.stringify(body) }),
   deleteDestination: (id) => request(`/skills/backup/destinations/${id}`, { method: 'DELETE' }),
@@ -224,11 +224,11 @@ export const backup = {
 
 export const dbadmin = {
   discover: () => request('/skills/dbadmin/discover'),
-  discoverProject: (name) => request(`/skills/dbadmin/discover/${name}`),
-  health: (name) => request(`/skills/dbadmin/health/${name}`),
-  dump: (name) => request(`/skills/dbadmin/dump/${name}`, { method: 'POST' }),
+  discoverProject: (name) => request(`/skills/dbadmin/discover/${encodeURIComponent(name)}`),
+  health: (name) => request(`/skills/dbadmin/health/${encodeURIComponent(name)}`),
+  dump: (name) => request(`/skills/dbadmin/dump/${encodeURIComponent(name)}`, { method: 'POST' }),
   dumps: () => request('/skills/dbadmin/dumps'),
-  projectDumps: (name) => request(`/skills/dbadmin/dumps/${name}`),
+  projectDumps: (name) => request(`/skills/dbadmin/dumps/${encodeURIComponent(name)}`),
 };
 
 export const registries = {
