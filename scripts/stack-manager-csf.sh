@@ -267,8 +267,9 @@ cmd_install() {
     fi
 
     # Replace CSF's default cPanel-oriented port rules with a minimal
-    # Stack Manager config. Only SSH + the dashboard port inbound.
-    # Project ports are auto-added by the server on each project start.
+    # Stack Manager config. ONLY the dashboard port inbound. Users who
+    # need SSH add their IP to csf.allow — the auto-allow on login and
+    # the IP added below handle the installer's access.
     sm_ssl_port=8993
     for envfile in .env ../stack-manager/.env ../Stack-Manager/.env; do
       if [[ -f "$envfile" ]]; then
@@ -278,17 +279,30 @@ cmd_install() {
       fi
     done
 
-    # TCP IN: only SSH + dashboard. Projects auto-add their ports.
-    sed -i "s|^TCP_IN\s*=.*|TCP_IN = \"22,${sm_ssl_port}\"|" "$CSF_ETC/csf.conf"
-    log "Set TCP_IN to 22,${sm_ssl_port} (SSH + dashboard only)"
+    # TCP IN: dashboard only. SSH access is via IP allowlist, not open port.
+    sed -i "s|^TCP_IN\s*=.*|TCP_IN = \"${sm_ssl_port}\"|" "$CSF_ETC/csf.conf"
+    log "Set TCP_IN to ${sm_ssl_port} (dashboard only)"
 
-    # UDP IN: empty — no inbound UDP needed for a Docker host by default.
+    # UDP IN: empty — no inbound UDP needed.
     sed -i 's/^UDP_IN\s*=.*/UDP_IN = ""/' "$CSF_ETC/csf.conf"
-    log "Cleared UDP_IN (no inbound UDP needed)"
+    log "Cleared UDP_IN"
 
-    # TCP6/UDP6 IN: match the IPv4 settings.
-    sed -i "s|^TCP6_IN\s*=.*|TCP6_IN = \"22,${sm_ssl_port}\"|" "$CSF_ETC/csf.conf"
+    # IPv6: match IPv4.
+    sed -i "s|^TCP6_IN\s*=.*|TCP6_IN = \"${sm_ssl_port}\"|" "$CSF_ETC/csf.conf"
     sed -i 's/^UDP6_IN\s*=.*/UDP6_IN = ""/' "$CSF_ETC/csf.conf"
+
+    # Auto-allow the installer's IP so they don't get locked out.
+    # Detect the IP of whoever is connected via SSH right now.
+    installer_ip=""
+    if [[ -n "${SSH_CLIENT:-}" ]]; then
+      installer_ip="$(printf '%s' "$SSH_CLIENT" | awk '{print $1}')"
+    elif [[ -n "${SSH_CONNECTION:-}" ]]; then
+      installer_ip="$(printf '%s' "$SSH_CONNECTION" | awk '{print $1}')"
+    fi
+    if [[ -n "$installer_ip" ]]; then
+      "$CSF_BIN" -a "$installer_ip" "Stack Manager installer" 2>/dev/null || true
+      log "Auto-allowed installer IP ${installer_ip} in csf.allow"
+    fi
 
     # All outbound open — Docker needs unrestricted outbound for image
     # pulls, DNS, package updates, API calls, etc.
