@@ -570,8 +570,16 @@ function InteractiveShell({ projectName }) {
     ws.binaryType = 'arraybuffer';
     wsRef.current = ws;
 
+    const sendResize = () => {
+      if (ws.readyState === WebSocket.OPEN && term.cols && term.rows) {
+        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+      }
+    };
+
     ws.onopen = () => {
       setConnected(true);
+      fit.fit();
+      sendResize();
       term.focus();
     };
     ws.onmessage = (ev) => {
@@ -596,12 +604,18 @@ function InteractiveShell({ projectName }) {
       }
     });
 
-    const onResize = () => {
+    term.onResize(({ cols, rows }) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+      }
+    });
+
+    const onWindowResize = () => {
       if (fitRef.current) fitRef.current.fit();
     };
-    window.addEventListener('resize', onResize);
+    window.addEventListener('resize', onWindowResize);
     return () => {
-      window.removeEventListener('resize', onResize);
+      window.removeEventListener('resize', onWindowResize);
     };
   }, [selectedContainer, connected, projectName]);
 
