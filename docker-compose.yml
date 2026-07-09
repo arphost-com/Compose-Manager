@@ -66,6 +66,9 @@ services:
       FRONTEND_EXTERNAL: "true"
     user: "${SERVER_USER:?SERVER_USER required, set to the host service UID:GID such as 1000:1000}"
     pid: host
+    cap_add:
+      - SYS_PTRACE
+      - SYS_ADMIN
     group_add:
       - "${DOCKER_GID:-0}"
     volumes:
