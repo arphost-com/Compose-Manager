@@ -829,7 +829,14 @@ func cleanInt64List(values []int64) []int64 {
 
 func validateMapValues(label string, values map[string]string) error {
 	for key, value := range values {
-		if strings.ContainsAny(key, "\r\n") || strings.ContainsAny(value, "\r\n") {
+		if strings.ContainsAny(key, "\r\n") {
+			return fmt.Errorf("%s key contains invalid newline characters", label)
+		}
+		// Allow newlines in private_key values — PEM keys have them.
+		if key == "private_key" {
+			continue
+		}
+		if strings.ContainsAny(value, "\r\n") {
 			return fmt.Errorf("%s contains invalid newline characters", label)
 		}
 	}
