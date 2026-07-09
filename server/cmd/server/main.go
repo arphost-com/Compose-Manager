@@ -111,6 +111,7 @@ func main() {
 	shellHandler := handlers.NewShellHandler(engine)
 	projectFileHandler := handlers.NewProjectFileHandler(engine)
 	envSettingsHandler := handlers.NewEnvSettingsHandler(cfg.StateDir)
+	agentProxyHandler := handlers.NewAgentProxyHandler(appStore)
 	proxyHandler := handlers.NewProxyHandler(engine)
 	authHandler := handlers.NewAuthHandler(userStore, sessionManager)
 	authHandler.IPAllower = firewallSkill
@@ -247,6 +248,9 @@ func main() {
 
 			// System info
 			r.Get("/system/gpu", handlers.GPUDetect)
+
+			// Agent proxy — forward actions to inbound agents
+			r.HandleFunc("/agent-proxy/{agentId}/*", agentProxyHandler.Proxy)
 
 			// General settings (.env)
 			r.Get("/settings/env", envSettingsHandler.Get)
