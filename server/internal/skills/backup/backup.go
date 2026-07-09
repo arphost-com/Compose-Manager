@@ -1183,6 +1183,34 @@ func (s *Skill) listBackups(projectFilter string) []core.BackupInfo {
 		})
 	}
 
+	// Also include SQL dumps from db-dumps subdirectory.
+	dumpDir := filepath.Join(s.backupDir, "db-dumps")
+	dumpEntries, _ := os.ReadDir(dumpDir)
+	for _, entry := range dumpEntries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		parts := strings.SplitN(entry.Name(), "__", 2)
+		if len(parts) < 1 {
+			continue
+		}
+		projectName := parts[0]
+		if projectFilter != "" && projectName != projectFilter {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		backups = append(backups, core.BackupInfo{
+			ID:        "db-dumps/" + entry.Name(),
+			Project:   projectName,
+			File:      filepath.Join(dumpDir, entry.Name()),
+			SizeBytes: info.Size(),
+			CreatedAt: info.ModTime(),
+		})
+	}
+
 	// Sort newest first
 	sort.Slice(backups, func(i, j int) bool {
 		return backups[i].CreatedAt.After(backups[j].CreatedAt)
