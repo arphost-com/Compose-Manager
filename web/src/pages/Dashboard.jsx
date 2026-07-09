@@ -775,7 +775,13 @@ export default function Dashboard() {
                       {p.inactive && <Badge tone="amber">inactive</Badge>}
                       {p.has_hook?.update && <Badge tone="cyan">update hook</Badge>}
                       {p.update_policy?.effective_policy === 'no_updates' && <Badge tone="amber">no updates</Badge>}
-                      <Badge tone={updateStatusTone(p)}>{updateStatusLabel(p)}</Badge>
+                      {(p.update_status?.error || p.update_status?.available) ? (
+                        <Link to={`/projects/${encodeURIComponent(p.name)}?tab=sources`} title={p.update_status?.error || `${p.update_status?.count || 1} image updates available`}>
+                          <Badge tone={updateStatusTone(p)}>{updateStatusLabel(p)}</Badge>
+                        </Link>
+                      ) : (
+                        <Badge tone={updateStatusTone(p)}>{updateStatusLabel(p)}</Badge>
+                      )}
                     </div>
                   </td>
                   <td className="py-3"><Badge tone={p.running ? 'green' : 'gray'}>{p.running ? 'running' : 'stopped'}</Badge></td>
