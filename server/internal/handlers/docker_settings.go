@@ -180,7 +180,10 @@ func (h *DockerSettingsHandler) RestartDocker(w http.ResponseWriter, r *http.Req
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "systemctl", "restart", "docker")
+	helperImage := h.helperImage()
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--privileged", "--network=host", "--pid=host",
+		"-v", "/:/host", helperImage,
+		"chroot", "/host", "systemctl", "restart", "docker")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to restart Docker: %s: %s", err.Error(), strings.TrimSpace(string(output))))

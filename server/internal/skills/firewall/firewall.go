@@ -535,21 +535,29 @@ func (s *Skill) runHelper(ctx context.Context, timeout time.Duration, stdin io.R
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Use nsenter to exec into the host's PID 1 namespace instead of
-	// spawning a new Docker container. This is critical for commands
-	// like `csf -r` that flush iptables — a `docker run` container
-	// would destroy its own networking mid-operation and die with
-	// "unexpected EOF". nsenter runs inside the existing server
-	// container process (which has --pid=host via compose) so it
-	// survives the iptables flush.
-	nsenterArgs := []string{
-		"--target", "1",
-		"--mount", "--uts", "--ipc", "--net", "--pid",
-		"--", s.helperPath, sub,
+	// Spawn a throwaway privileged container with --network=host and
+	// chroot into the host root to run the helper. The --network=host
+	// flag means the container uses the host's network stack directly
+	// and survives iptables flushes (csf -r). The csfpost.sh Docker
+	// restart uses a background nohup+sleep so it fires AFTER this
+	// helper container returns its output.
+	dockerArgs := []string{"run", "--rm"}
+	if stdin != nil {
+		dockerArgs = append(dockerArgs, "-i")
 	}
-	nsenterArgs = append(nsenterArgs, args...)
+	dockerArgs = append(dockerArgs,
+		"--privileged",
+		"--network=host",
+		"--pid=host",
+		"-v", "/:/host",
+		"-e", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		s.baseImagePrefix+defaultHelperImage,
+		"chroot", "/host",
+		s.helperPath, sub,
+	)
+	dockerArgs = append(dockerArgs, args...)
 
-	cmd := exec.CommandContext(ctx, "nsenter", nsenterArgs...) //nolint:gosec // helper path is a hardcoded default; sub+args validated by the helper
+	cmd := exec.CommandContext(ctx, "docker", dockerArgs...) //nolint:gosec // helper path is a hardcoded default; sub+args validated by the helper
 	cmd.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
 	if stdin != nil {
 		cmd.Stdin = stdin

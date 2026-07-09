@@ -276,17 +276,14 @@ CSFPRE
     chmod 700 "$CSF_ETC/csfpre.sh"
 
     # csfpost.sh — runs AFTER csf applies its rules.
+    # The Docker restart is backgrounded with a 5-second delay so the
+    # Stack Manager helper container (which runs csf -r via docker run)
+    # has time to finish and return output before Docker kills it.
     cat > "$CSF_ETC/csfpost.sh" << 'CSFPOST'
 #!/bin/bash
-# Restart Docker so it re-inserts its NAT, FORWARD, and DOCKER chains
-# on top of CSF's rules. This is the most reliable approach — surgical
-# iptables re-insertion breaks when Docker networks or containers change.
-# Containers with restart policies come back automatically.
-echo "[csfpost] Restarting Docker to restore container networking..."
-systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true
-# Brief pause for Docker to finish re-creating its chains.
-sleep 2
-echo "[csfpost] Docker restarted."
+# Delayed Docker restart — gives the caller container time to finish.
+echo "[csfpost] Docker restart scheduled in 5 seconds..."
+nohup bash -c 'sleep 5 && (systemctl restart docker 2>/dev/null || service docker restart 2>/dev/null || true) && echo "[csfpost] Docker restarted."' >> /var/log/csfpost-docker.log 2>&1 &
 CSFPOST
     chmod 700 "$CSF_ETC/csfpost.sh"
     log "Wrote $CSF_ETC/csfpre.sh and $CSF_ETC/csfpost.sh for Docker compatibility"
