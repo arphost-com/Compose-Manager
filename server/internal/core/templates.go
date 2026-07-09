@@ -3001,11 +3001,11 @@ func gamingTemplates() []StackTemplate {
 			Description: "In-browser retro game emulation with ROM management.",
 			Category:    "gaming",
 			Source:      "linuxserver",
-			Image:       "lscr.io/linuxserver/emulatorjs:latest",
+			Image:       "lscr.io/linuxserver/emulatorjs:1.9.2",
 			Tags:        []string{"gaming", "emulation", "retro", "browser"},
 			ComposeContent: `services:
   emulatorjs:
-    image: lscr.io/linuxserver/emulatorjs:latest
+    image: lscr.io/linuxserver/emulatorjs:1.9.2
     restart: unless-stopped
     ports:
       - "${EMULATORJS_PORT:-3000}:3000"
@@ -3022,7 +3022,7 @@ volumes:
   emulatorjs-data:
 `,
 			EnvContent: "EMULATORJS_PORT=3000\nEMULATORJS_MGMT_PORT=3001\nPUID=1000\nPGID=1000\nTZ=Etc/UTC\n",
-			Notes:      "Port 3000 is the player frontend, port 3001 is the ROM management backend. Upload ROMs through the management UI.",
+			Notes:      "Port 3000 is the player frontend, port 3001 is the ROM management backend. Upload ROMs through the management UI. Pinned to 1.9.2 — LinuxServer deprecated this image and the latest tag no longer resolves.",
 		},
 		{
 			ID:          "sunshine",
