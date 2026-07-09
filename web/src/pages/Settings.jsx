@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { auth, users, backup, projects, agents, schedules, registries, dockerSettings, ssl as sslApi, firewall as firewallApi, totp as totpApi, envSettings } from '../api/client';
+import { auth, users, backup, projects, agents, schedules, registries, dockerSettings, ssl as sslApi, firewall as firewallApi, totp as totpApi, envSettings, proxy as proxyApi } from '../api/client';
 import { getThemePreference, setThemePreference } from '../theme';
 import { buildDockerConfig, formFromDockerConfig, pruneMap } from '../utils/dockerSettings';
 
@@ -139,6 +139,11 @@ export default function Settings() {
   const [generalSettings, setGeneralSettings] = useState(null);
   const [generalForm, setGeneralForm] = useState({});
   const [rolledAPIKey, setRolledAPIKey] = useState('');
+  const [npmStatus, setNpmStatus] = useState(null);
+  const [npmForm, setNpmForm] = useState({ url: '', email: 'admin@example.com', password: '' });
+  const [npmHosts, setNpmHosts] = useState([]);
+  const [npmSuggestions, setNpmSuggestions] = useState([]);
+  const [npmHostForm, setNpmHostForm] = useState({ domain: '', forward_host: '', forward_port: '', forward_scheme: 'http' });
   const [totpEnrolling, setTotpEnrolling] = useState(false);
   const [totpEnrollData, setTotpEnrollData] = useState(null);
   const [totpVerifyCode, setTotpVerifyCode] = useState('');
@@ -203,6 +208,70 @@ export default function Settings() {
   useEffect(() => {
     if (admin && activeTab === 'registries') loadSavedRegistries();
   }, [admin, activeTab]);
+
+  useEffect(() => {
+    if (admin && activeTab === 'proxy') loadProxyStatus();
+  }, [admin, activeTab]);
+
+  const loadProxyStatus = async () => {
+    try {
+      const res = await proxyApi.status();
+      setNpmStatus(res.data);
+      if (res.data?.connected) {
+        const [hostsRes, sugRes] = await Promise.all([proxyApi.listHosts().catch(() => ({ data: [] })), proxyApi.suggestions().catch(() => ({ data: [] }))]);
+        setNpmHosts(Array.isArray(hostsRes.data) ? hostsRes.data : hostsRes.data ? [hostsRes.data] : []);
+        setNpmSuggestions(sugRes.data || []);
+      }
+    } catch (err) { showError(err); }
+  };
+
+  const connectNpm = async () => {
+    try {
+      await proxyApi.configure(npmForm.url, npmForm.email, npmForm.password);
+      showMessage('Connected to Nginx Proxy Manager.');
+      setNpmForm({ ...npmForm, password: '' });
+      loadProxyStatus();
+    } catch (err) { showError(err); }
+  };
+
+  const createProxyHost = async () => {
+    const domain = npmHostForm.domain.trim();
+    if (!domain || !npmHostForm.forward_host || !npmHostForm.forward_port) {
+      showError(new Error('Domain, forward host, and forward port are required.')); return;
+    }
+    try {
+      await proxyApi.createHost({
+        domain_names: [domain],
+        forward_scheme: npmHostForm.forward_scheme || 'http',
+        forward_host: npmHostForm.forward_host.trim(),
+        forward_port: Number(npmHostForm.forward_port),
+        block_exploits: true,
+        allow_websocket_upgrade: true,
+        access_list_id: 0,
+        certificate_id: 0,
+        meta: { letsencrypt_agree: false, dns_challenge: false },
+        advanced_config: '',
+        locations: [],
+        caching_enabled: false,
+        ssl_forced: false,
+        http2_support: false,
+        hsts_enabled: false,
+        hsts_subdomains: false,
+      });
+      showMessage(`Proxy host ${domain} created.`);
+      setNpmHostForm({ domain: '', forward_host: '', forward_port: '', forward_scheme: 'http' });
+      loadProxyStatus();
+    } catch (err) { showError(err); }
+  };
+
+  const deleteProxyHost = async (id, domains) => {
+    if (!window.confirm(`Delete proxy host ${domains}?`)) return;
+    try {
+      await proxyApi.deleteHost(id);
+      showMessage(`Deleted proxy host ${domains}.`);
+      loadProxyStatus();
+    } catch (err) { showError(err); }
+  };
 
   useEffect(() => {
     if (admin && activeTab === 'general') loadGeneralSettings();
@@ -1662,35 +1731,91 @@ export default function Settings() {
         <div className="space-y-4">
           <div className="section-panel">
             <h2 className="text-lg font-semibold text-gray-950">Reverse Proxy (Nginx Proxy Manager)</h2>
-            <p className="mt-1 text-sm text-gray-600">Use a reverse proxy when you have real domain names pointing at this host and want per-domain HTTPS via Let's Encrypt. If this host is on a private network or only reachable by IP, the default self-signed certificate is the right choice — skip this panel.</p>
+            <p className="mt-1 text-sm text-gray-600">Connect to a running NPM instance to manage proxy hosts from this dashboard. Deploy NPM from the Stack Catalog first, then enter its admin URL and credentials below. Only needed when you have real domain names.</p>
           </div>
+
           <div className="section-panel space-y-3">
-            <h3 className="text-base font-semibold text-gray-950">How to set up</h3>
-            <ol className="list-decimal space-y-3 pl-5 text-sm text-gray-700">
-              <li>
-                <span className="font-medium">Deploy NPM from the Stack Catalog.</span> Go to <span className="font-medium">Stack Catalog</span>, search for <code className="rounded bg-gray-100 px-1">nginx-proxy-manager</code>, and click <span className="font-medium">Spin it Up</span>. It binds ports 80, 443, and 81 (admin).
-              </li>
-              <li>
-                <span className="font-medium">Resolve the port 80 conflict.</span> If Stack Manager's web container also binds port 80, edit Stack Manager's <code className="rounded bg-gray-100 px-1">.env</code> and change <code className="rounded bg-gray-100 px-1">WEB_HTTP_PORT</code> to a different port (e.g. <code className="rounded bg-gray-100 px-1">8193</code>) or set it to <code className="rounded bg-gray-100 px-1">0</code> to disable. Then restart the Stack Manager stack.
-              </li>
-              <li>
-                <span className="font-medium">Log into NPM admin.</span> Open <code className="rounded bg-gray-100 px-1">http://{'<'}host-ip{'>'}:81</code>. Default credentials: <code className="rounded bg-gray-100 px-1">admin@example.com</code> / <code className="rounded bg-gray-100 px-1">changeme</code>. Change the password immediately.
-              </li>
-              <li>
-                <span className="font-medium">Add proxy hosts.</span> For each project you want to expose with HTTPS:
-                <ul className="mt-1 list-disc space-y-1 pl-5 text-gray-600">
-                  <li>Add a <span className="font-medium">Proxy Host</span> in NPM.</li>
-                  <li>Set the <span className="font-medium">Domain</span> to your FQDN (e.g. <code className="rounded bg-gray-100 px-1">app.example.com</code>).</li>
-                  <li>Set <span className="font-medium">Forward Hostname / IP</span> to the Docker host's internal IP or <code className="rounded bg-gray-100 px-1">host.docker.internal</code>.</li>
-                  <li>Set the <span className="font-medium">Forward Port</span> to the project's mapped host port.</li>
-                  <li>Enable <span className="font-medium">SSL</span> and request a new Let's Encrypt certificate.</li>
-                </ul>
-              </li>
-              <li>
-                <span className="font-medium">To proxy Stack Manager itself:</span> Forward Port = the <code className="rounded bg-gray-100 px-1">WEB_SSL_PORT</code> value (default 8993), scheme HTTPS, and enable "Block Common Exploits".
-              </li>
-            </ol>
+            <h3 className="text-base font-semibold text-gray-950">NPM Connection</h3>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <Field label="NPM Admin URL" hint="e.g. http://78.109.20.111:81">
+                <input className="input" value={npmForm.url} onChange={e => setNpmForm({ ...npmForm, url: e.target.value })} placeholder="http://localhost:81" />
+              </Field>
+              <Field label="Admin Email" hint="default: admin@example.com">
+                <input className="input" value={npmForm.email} onChange={e => setNpmForm({ ...npmForm, email: e.target.value })} />
+              </Field>
+              <Field label="Password">
+                <input className="input" type="password" value={npmForm.password} onChange={e => setNpmForm({ ...npmForm, password: e.target.value })} placeholder={npmStatus?.connected ? 'connected' : 'changeme'} />
+              </Field>
+            </div>
+            <div className="flex items-center gap-3">
+              <button className="btn-primary" onClick={connectNpm}>Connect</button>
+              {npmStatus?.connected && <Badge tone="green">connected</Badge>}
+              {npmStatus && !npmStatus.connected && npmStatus.configured && <Badge tone="red">disconnected</Badge>}
+            </div>
           </div>
+
+          {npmStatus?.connected && (
+            <>
+              <div className="section-panel space-y-3">
+                <h3 className="text-base font-semibold text-gray-950">Proxy Hosts ({npmHosts.length})</h3>
+                {npmHosts.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead><tr className="border-b border-gray-200 text-xs uppercase text-gray-500"><th className="py-2">Domain(s)</th><th>Forward</th><th>SSL</th><th className="text-right">Actions</th></tr></thead>
+                      <tbody>
+                        {npmHosts.map(host => (
+                          <tr key={host.id} className="border-b border-gray-100">
+                            <td className="py-2 font-mono text-xs">{(host.domain_names || []).join(', ')}</td>
+                            <td className="text-xs text-gray-600">{host.forward_scheme}://{host.forward_host}:{host.forward_port}</td>
+                            <td>{host.certificate_id > 0 ? <Badge tone="green">SSL</Badge> : <Badge tone="gray">none</Badge>}</td>
+                            <td className="text-right"><button className="mini-danger" onClick={() => deleteProxyHost(host.id, (host.domain_names || []).join(', '))}>Delete</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {npmHosts.length === 0 && <p className="text-sm text-gray-500">No proxy hosts configured in NPM.</p>}
+              </div>
+
+              <div className="section-panel space-y-3">
+                <h3 className="text-base font-semibold text-gray-950">Add Proxy Host</h3>
+                {npmSuggestions.length > 0 && (
+                  <div className="text-sm text-gray-600">
+                    Running projects with exposed ports:
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {npmSuggestions.map(s => (
+                        <button key={s.name} className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-800 hover:bg-blue-100" onClick={() => {
+                          const portMatch = s.ports.match(/(\d+)->(\d+)/);
+                          setNpmHostForm({ ...npmHostForm, forward_host: window.location.hostname, forward_port: portMatch ? portMatch[1] : '', domain: s.name + '.example.com' });
+                        }} title={s.ports}>{s.name}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="grid gap-2 sm:grid-cols-4">
+                  <Field label="Domain">
+                    <input className="input" value={npmHostForm.domain} onChange={e => setNpmHostForm({ ...npmHostForm, domain: e.target.value })} placeholder="app.example.com" />
+                  </Field>
+                  <Field label="Forward Host">
+                    <input className="input" value={npmHostForm.forward_host} onChange={e => setNpmHostForm({ ...npmHostForm, forward_host: e.target.value })} placeholder={window.location.hostname} />
+                  </Field>
+                  <Field label="Forward Port">
+                    <input className="input" type="number" value={npmHostForm.forward_port} onChange={e => setNpmHostForm({ ...npmHostForm, forward_port: e.target.value })} placeholder="8080" />
+                  </Field>
+                  <Field label="Scheme">
+                    <select className="input" value={npmHostForm.forward_scheme} onChange={e => setNpmHostForm({ ...npmHostForm, forward_scheme: e.target.value })}>
+                      <option value="http">http</option>
+                      <option value="https">https</option>
+                    </select>
+                  </Field>
+                </div>
+                <button className="btn-primary" onClick={createProxyHost}>Create Proxy Host</button>
+                <p className="text-xs text-gray-500">After creating, open NPM admin to enable SSL and request a Let's Encrypt certificate for this host.</p>
+              </div>
+            </>
+          )}
+
           <div className="section-panel border-amber-200 bg-amber-50">
             <h3 className="text-base font-semibold text-amber-900">When NOT to use a reverse proxy</h3>
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">

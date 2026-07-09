@@ -109,6 +109,7 @@ func main() {
 	shellHandler := handlers.NewShellHandler(engine)
 	projectFileHandler := handlers.NewProjectFileHandler(engine)
 	envSettingsHandler := handlers.NewEnvSettingsHandler(cfg.StateDir)
+	proxyHandler := handlers.NewProxyHandler(engine)
 	authHandler := handlers.NewAuthHandler(userStore, sessionManager)
 	authHandler.IPAllower = firewallSkill
 
@@ -216,6 +217,14 @@ func main() {
 			r.Post("/metrics/refresh", metricsHandler.Refresh)
 			r.Get("/docker/daemon", dockerSettingsHandler.GetDaemon)
 			r.Put("/docker/daemon", dockerSettingsHandler.SaveDaemon)
+
+			// Reverse proxy (NPM)
+			r.Get("/proxy/status", proxyHandler.Status)
+			r.Post("/proxy/configure", proxyHandler.Configure)
+			r.Get("/proxy/hosts", proxyHandler.ListHosts)
+			r.Post("/proxy/hosts", proxyHandler.CreateHost)
+			r.Delete("/proxy/hosts", proxyHandler.DeleteHost)
+			r.Get("/proxy/suggestions", proxyHandler.ProjectSuggestions)
 
 			// General settings (.env)
 			r.Get("/settings/env", envSettingsHandler.Get)

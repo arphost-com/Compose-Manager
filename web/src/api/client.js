@@ -246,6 +246,15 @@ export const dockerSettings = {
   saveDaemon: (body) => request('/docker/daemon', { method: 'PUT', body: JSON.stringify(body) }),
 };
 
+export const proxy = {
+  status: () => request('/proxy/status'),
+  configure: (url, email, password) => request('/proxy/configure', { method: 'POST', body: JSON.stringify({ url, email, password }) }),
+  listHosts: () => request('/proxy/hosts'),
+  createHost: (body) => request('/proxy/hosts', { method: 'POST', body: JSON.stringify(body) }),
+  deleteHost: (id) => request(`/proxy/hosts?id=${id}`, { method: 'DELETE' }),
+  suggestions: () => request('/proxy/suggestions'),
+};
+
 export const envSettings = {
   get: () => request('/settings/env'),
   save: (body) => request('/settings/env', { method: 'PUT', body: JSON.stringify(body) }),
