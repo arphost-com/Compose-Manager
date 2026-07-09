@@ -101,7 +101,8 @@ security:trufflehog:
   stage: security
   script:
     - command -v trufflehog
-    - trufflehog filesystem --no-update --json --fail . | tee trufflehog-report.json
+    # pipefail so trufflehog's --fail exit code isn't masked by tee (always exits 0).
+    - set -o pipefail; trufflehog filesystem --no-update --json --fail . | tee trufflehog-report.json
   artifacts:
     when: always
     expire_in: 1 week

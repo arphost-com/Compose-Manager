@@ -230,7 +230,10 @@ compose_cmd() {
   [[ -n "$cf" ]] || return 1
 
   local pname; pname="$(project_name_for_dir "$dir")"
-  echo "COMPOSE_PROGRESS=plain docker compose --ansi never -f \"$cf\" -p \"$pname\""
+  # The result is re-parsed by `bash -lc`, so shell-quote the path and project
+  # name with %q. A compose file under a directory named e.g. `x$(cmd)` would
+  # otherwise command-inject when the string is re-evaluated.
+  printf 'COMPOSE_PROGRESS=plain docker compose --ansi never -f %q -p %q' "$cf" "$pname"
 }
 
 running_container_lines_for_dir() {
@@ -775,20 +778,20 @@ if [[ $# -lt 1 ]]; then usage; exit 1; fi
 
 while [[ $# -gt 0 ]]; do
   case "${1:-}" in
-    -r|--root) ROOT="${2:-}"; shift 2;;
-    -x|--exclude) EXCLUDES+=("${2:-}"); shift 2;;
-    -o|--only) ONLY+=("${2:-}"); shift 2;;
+    -r|--root) ROOT="${2:-}"; shift 2 2>/dev/null || shift;;
+    -x|--exclude) EXCLUDES+=("${2:-}"); shift 2 2>/dev/null || shift;;
+    -o|--only) ONLY+=("${2:-}"); shift 2 2>/dev/null || shift;;
     --include-inactive) INCLUDE_INACTIVE=1; shift;;
     --only-inactive) ONLY_INACTIVE=1; shift;;
     --running-only) RUNNING_ONLY=1; shift;;
-    --timeout) TIMEOUT_SECS="${2:-0}"; shift 2;;
+    --timeout) TIMEOUT_SECS="${2:-0}"; shift 2 2>/dev/null || shift;;
 
-    --log-dir) LOG_DIR="${2:-}"; shift 2;;
-    --log-file) LOG_FILE="${2:-}"; shift 2;;
+    --log-dir) LOG_DIR="${2:-}"; shift 2 2>/dev/null || shift;;
+    --log-file) LOG_FILE="${2:-}"; shift 2 2>/dev/null || shift;;
     --no-log|--log-off) LOG_ENABLED=0; shift;;
     --log-on) LOG_ENABLED=1; shift;;
 
-    --hooks-dir) HOOKS_DIR="${2:-}"; shift 2;;
+    --hooks-dir) HOOKS_DIR="${2:-}"; shift 2 2>/dev/null || shift;;
     --no-hooks) HOOKS_ENABLED=0; shift;;
 
     -n|--dry-run) DRY_RUN=1; shift;;

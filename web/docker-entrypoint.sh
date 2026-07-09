@@ -13,6 +13,28 @@ META="${SSL_DIR}/mode"
 
 mkdir -p "${SSL_DIR}" "${SSL_DIR}/acme-webroot"
 
+# Write the HTTP->HTTPS redirect target every boot. nginx can't know the
+# host-side published HTTPS port (WEB_SSL_PORT), so derive it from HOST_URL
+# (e.g. https://docker02:8993). Writing it unconditionally means a port change
+# in .env takes effect on the next restart. Included by nginx.conf.
+REDIRECT_CONF="${SSL_DIR}/redirect.conf"
+ssl_port=""
+if [ -n "${HOST_URL:-}" ]; then
+    host_port="$(printf '%s' "${HOST_URL}" | sed -E 's|^[a-zA-Z]+://||; s|/.*$||')"
+    case "${host_port}" in
+        *:*) ssl_port="${host_port##*:}" ;;
+    esac
+    # Only keep it if it's a clean numeric port.
+    case "${ssl_port}" in
+        ''|*[!0-9]*) ssl_port="" ;;
+    esac
+fi
+if [ -n "${ssl_port}" ] && [ "${ssl_port}" != "443" ]; then
+    printf 'return 301 https://$host:%s$request_uri;\n' "${ssl_port}" > "${REDIRECT_CONF}"
+else
+    printf 'return 301 https://$host$request_uri;\n' > "${REDIRECT_CONF}"
+fi
+
 if [ ! -s "${CERT}" ] || [ ! -s "${KEY}" ]; then
     hostname_short="$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo stack-manager)"
     hostname_fqdn="$(hostname -f 2>/dev/null || echo "${hostname_short}")"
