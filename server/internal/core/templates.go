@@ -1282,11 +1282,11 @@ volumes:
 			Category:    "ai",
 			Subcategory: "image-generation",
 			Source:      "portainer-style",
-			Image:       "yanwk/comfyui-boot:latest",
+			Image:       "yanwk/comfyui-boot:cu126-slim",
 			Tags:        []string{"ai", "images", "stable-diffusion"},
 			ComposeContent: `services:
   comfyui:
-    image: yanwk/comfyui-boot:latest
+    image: yanwk/comfyui-boot:cu126-slim
     restart: unless-stopped
     ports:
       - "${COMFYUI_PORT:-8188}:8188"
@@ -2968,11 +2968,11 @@ volumes:
 			Description: "Book and audiobook management and automation.",
 			Category:    "media",
 			Source:      "linuxserver",
-			Image:       "lscr.io/linuxserver/readarr:develop",
+			Image:       "lscr.io/linuxserver/readarr:0.4.18-develop",
 			Tags:        []string{"media", "books", "audiobooks", "automation", "pvr"},
 			ComposeContent: `services:
   readarr:
-    image: lscr.io/linuxserver/readarr:develop
+    image: lscr.io/linuxserver/readarr:0.4.18-develop
     restart: unless-stopped
     ports:
       - "${READARR_PORT:-8787}:8787"
@@ -2988,7 +2988,7 @@ volumes:
   readarr-downloads:
 `,
 			EnvContent: "READARR_PORT=8787\nPUID=1000\nPGID=1000\nTZ=Etc/UTC\n",
-			Notes:      "Uses the develop tag because Readarr has not had a stable release yet. Connect to a download client and indexer after first login.",
+			Notes:      "Pinned to 0.4.18-develop, the last published build - the Readarr project was retired upstream and the develop tag manifest is now empty. Connect to a download client and indexer after first login.",
 		},
 	}
 }
@@ -3030,11 +3030,11 @@ volumes:
 			Description: "Self-hosted game streaming server compatible with Moonlight clients.",
 			Category:    "gaming",
 			Source:      "linuxserver",
-			Image:       "lizardbyte/sunshine:latest",
+			Image:       "ghcr.io/lizardbyte/sunshine:latest",
 			Tags:        []string{"gaming", "streaming", "moonlight", "gpu"},
 			ComposeContent: `services:
   sunshine:
-    image: lizardbyte/sunshine:latest
+    image: ghcr.io/lizardbyte/sunshine:latest
     restart: unless-stopped
     ports:
       - "${SUNSHINE_PORT:-47990}:47990"

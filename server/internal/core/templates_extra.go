@@ -49,13 +49,13 @@ volumes:
 		{
 			ID: "openhands", Name: "OpenHands (formerly OpenDevin)", Description: "Autonomous coding agent that plans and executes tasks.",
 			Category: "ai", Subcategory: "code-assistants",
-			Source: "docker-hub", Image: "docker.all-hands.dev/all-hands-ai/openhands:main",
+			Source: "docker-hub", Image: "ghcr.io/openhands/openhands:0.61",
 			Tags: []string{"ai", "code-assistant", "agent"},
 			ComposeContent: `services:
   openhands:
-    image: docker.all-hands.dev/all-hands-ai/openhands:main
+    image: ghcr.io/openhands/openhands:0.61
     environment:
-      SANDBOX_RUNTIME_CONTAINER_IMAGE: docker.all-hands.dev/all-hands-ai/runtime:main-nikolaik
+      SANDBOX_RUNTIME_CONTAINER_IMAGE: ghcr.io/openhands/runtime:0.61-nikolaik
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-anthropic/claude-3-5-sonnet-latest}
     ports:
@@ -175,11 +175,11 @@ volumes:
 		{
 			ID: "invokeai", Name: "InvokeAI", Description: "Stable Diffusion creative studio with node graph and gallery UI.",
 			Category: "ai", Subcategory: "image-generation",
-			Source: "docker-hub", Image: "invokeai/invokeai:latest",
+			Source: "docker-hub", Image: "ghcr.io/invoke-ai/invokeai:latest",
 			Tags: []string{"ai", "image", "stable-diffusion"},
 			ComposeContent: `services:
   invokeai:
-    image: invokeai/invokeai:latest
+    image: ghcr.io/invoke-ai/invokeai:latest
     ports:
       - "${INVOKEAI_PORT:-9090}:9090"
     volumes:
@@ -292,12 +292,12 @@ volumes:
 		{
 			ID: "whisper-cpp", Name: "whisper.cpp Server", Description: "C++ inference server for OpenAI Whisper models.",
 			Category: "ai", Subcategory: "voice-speech",
-			Source: "docker-hub", Image: "ghcr.io/ggerganov/whisper.cpp:main-server",
+			Source: "docker-hub", Image: "ghcr.io/ggml-org/whisper.cpp:main",
 			Tags: []string{"ai", "asr", "voice"},
 			ComposeContent: `services:
   whisper:
-    image: ghcr.io/ggerganov/whisper.cpp:main-server
-    command: ["-l", "${WHISPER_LANG:-en}", "-m", "/models/${WHISPER_MODEL:-ggml-base.en.bin}"]
+    image: ghcr.io/ggml-org/whisper.cpp:main
+    command: ["whisper-server -l ${WHISPER_LANG:-en} -m /models/${WHISPER_MODEL:-ggml-base.en.bin} --host 0.0.0.0 --port 8080"]
     ports:
       - "${WHISPER_PORT:-8081}:8080"
     volumes:
@@ -307,16 +307,16 @@ volumes:
   whisper-models:
 `,
 			EnvContent: "WHISPER_PORT=8081\nWHISPER_LANG=en\nWHISPER_MODEL=ggml-base.en.bin\n",
-			Notes:      "Download the requested ggml model into the whisper-models volume before first request.",
+			Notes:      "Download the requested ggml model into the whisper-models volume before first request. Image moved to the ggml-org namespace; the server binary is launched via the bash -c entrypoint.",
 		},
 		{
 			ID: "faster-whisper", Name: "faster-whisper Server", Description: "GPU-optimized Whisper reimplementation with an OpenAI-compatible API.",
 			Category: "ai", Subcategory: "voice-speech",
-			Source: "docker-hub", Image: "fedirz/faster-whisper-server:latest",
+			Source: "docker-hub", Image: "fedirz/faster-whisper-server:latest-cpu",
 			Tags: []string{"ai", "asr", "voice"},
 			ComposeContent: `services:
   fasterwhisper:
-    image: fedirz/faster-whisper-server:latest
+    image: fedirz/faster-whisper-server:latest-cpu
     environment:
       WHISPER_MODEL: ${WHISPER_MODEL:-Systran/faster-whisper-medium}
       COMPUTE_TYPE: ${COMPUTE_TYPE:-int8}
@@ -329,7 +329,7 @@ volumes:
   fw-cache:
 `,
 			EnvContent: "FASTER_WHISPER_PORT=8082\nWHISPER_MODEL=Systran/faster-whisper-medium\nCOMPUTE_TYPE=int8\n",
-			Notes:      "Swap COMPUTE_TYPE to float16 on GPU hosts.",
+			Notes:      "Swap COMPUTE_TYPE to float16 and the image tag to latest-cuda on GPU hosts. Upstream renamed the project to speaches; this is the final faster-whisper-server build.",
 		},
 		{
 			ID: "xtts-server", Name: "XTTS v2 Server", Description: "Coqui XTTS-v2 streaming voice cloning server.",
@@ -624,11 +624,11 @@ volumes:
 		{
 			ID: "typesense", Name: "Typesense", Description: "Open-source, faceted search server with typo tolerance.",
 			Category: "ai", Subcategory: "search",
-			Source: "docker-hub", Image: "typesense/typesense:latest",
+			Source: "docker-hub", Image: "typesense/typesense:30.1",
 			Tags: []string{"search"},
 			ComposeContent: `services:
   typesense:
-    image: typesense/typesense:latest
+    image: typesense/typesense:30.1
     command: >-
       --data-dir /data
       --api-key=${TYPESENSE_KEY:?set TYPESENSE_KEY in .env}
@@ -1212,11 +1212,11 @@ volumes:
 		{
 			ID: "rundeck", Name: "Rundeck", Description: "Job scheduler and runbook automation.",
 			Category: "management",
-			Source: "docker-hub", Image: "rundeck/rundeck:latest",
+			Source: "docker-hub", Image: "rundeck/rundeck:6.0.0",
 			Tags: []string{"management", "automation"},
 			ComposeContent: `services:
   rundeck:
-    image: rundeck/rundeck:latest
+    image: rundeck/rundeck:6.0.0
     environment:
       RUNDECK_GRAILS_URL: ${RUNDECK_URL:-http://localhost:8095}
     ports:
@@ -1491,11 +1491,11 @@ volumes:
 		{
 			ID: "wazuh-manager", Name: "Wazuh Manager", Description: "Open-source security monitoring / SIEM manager.",
 			Category: "security",
-			Source: "docker-hub", Image: "wazuh/wazuh-manager:latest",
+			Source: "docker-hub", Image: "wazuh/wazuh-manager:4.14.6",
 			Tags: []string{"security", "siem"},
 			ComposeContent: `services:
   wazuh:
-    image: wazuh/wazuh-manager:latest
+    image: wazuh/wazuh-manager:4.14.6
     ports:
       - "${WAZUH_AGENTS:-1514}:1514"
       - "${WAZUH_ENROLLMENT:-1515}:1515"
