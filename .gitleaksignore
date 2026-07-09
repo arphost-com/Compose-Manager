@@ -1,0 +1,2 @@
+# False positive: curl example in OpenBrain documentation (placeholder, not a real credential)
+9320bc4a8f838cc2645ec0b94f211af645e066a8:web/src/pages/Documentation.jsx:curl-auth-header:239

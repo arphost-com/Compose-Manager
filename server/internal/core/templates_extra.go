@@ -1017,7 +1017,7 @@ volumes:
     environment:
       DRONE_SERVER_HOST: ${DRONE_HOST:-drone.local}
       DRONE_SERVER_PROTO: ${DRONE_PROTO:-http}
-      DRONE_RPC_SECRET: ${DRONE_SECRET:?set DRONE_SECRET (32+ chars) in .env}
+      DRONE_RPC_SECRET: ${DRONE_SECRET:-change-me-to-a-32-char-secret}
       DRONE_GITEA_SERVER: ${GITEA_URL:-}
       DRONE_GITEA_CLIENT_ID: ${GITEA_CLIENT:-}
       DRONE_GITEA_CLIENT_SECRET: ${GITEA_SECRET:-}
