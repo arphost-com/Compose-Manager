@@ -886,6 +886,26 @@ func (s *Store) DeleteSchedule(ctx context.Context, id int64) error {
 	return nil
 }
 
+// ScheduledProjectNames returns the set of local project names that have
+// at least one enabled update schedule. Used by the daily update checker
+// to skip projects that are already covered by a schedule.
+func (s *Store) ScheduledProjectNames(ctx context.Context) map[string]bool {
+	rows, err := s.DB.QueryContext(ctx,
+		`SELECT DISTINCT project FROM update_schedules WHERE enabled=TRUE AND agent_id IS NULL AND action IN ('update','pull')`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	result := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if rows.Scan(&name) == nil {
+			result[name] = true
+		}
+	}
+	return result
+}
+
 func (s *Store) MarkScheduleDispatched(ctx context.Context, id int64, nextRun time.Time, jobID, status, errText string) error {
 	_, err := s.DB.ExecContext(ctx, `UPDATE update_schedules
 		SET next_run_at=?, last_run_at=?, last_job_id=?, last_status=?, last_error=?, updated_at=?

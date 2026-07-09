@@ -85,7 +85,9 @@ Browse and deploy from a curated catalog organized into 14 categories and 10 AI 
 | **Dev Tools** | Gitea, Forgejo, code-server, Jenkins, Drone CI, Draw.io |
 | **Monitoring** | Grafana + Prometheus, Uptime Kuma, Beszel, Netdata, cAdvisor |
 | **Docs** | BookStack, Docmost, DokuWiki, Wiki.js, Outline |
-| **Media** | Jellyfin, Plex, Audiobookshelf, Calibre-Web |
+| **Media** | Jellyfin, Plex, Radarr, Sonarr, Lidarr, Prowlarr, qBittorrent, Transmission, Overseerr |
+| **Gaming** | EmulatorJS, Sunshine (Moonlight game streaming) |
+| **Remote** | Webtop (full Linux desktop in browser), Firefox |
 | **Security** | Authelia, Keycloak, WireGuard, CrowdSec, Vaultwarden |
 | **Files** | Nextcloud, Seafile, MinIO, Paperless-ngx |
 | **Queue** | RabbitMQ, Apache ActiveMQ, Beanstalkd, Faktory |
@@ -107,6 +109,8 @@ Set human-readable schedules from Settings or the Dashboard:
 - **Every N minutes** for custom intervals
 
 Each schedule targets a project (local or on a registered agent) and runs update, pull, up, restart, down, or status. Projects with a `no_updates` policy record a skipped session instead of pulling.
+
+Projects with an enabled scheduled update are automatically excluded from the nightly background update check — no wasted Docker Hub pulls for manifests that the scheduler will check anyway.
 
 ### Backup Endpoints
 

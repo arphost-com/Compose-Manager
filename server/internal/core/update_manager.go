@@ -8,6 +8,7 @@ import (
 type UpdateCheckStore interface {
 	SaveProjectUpdateStatus(context.Context, string, ProjectUpdateStatus) error
 	ResolveUpdatePolicy(Project) ProjectUpdatePolicy
+	ScheduledProjectNames(context.Context) map[string]bool
 }
 
 type UpdateCheckManager struct {
@@ -63,9 +64,17 @@ func (m *UpdateCheckManager) Run(ctx context.Context) ProjectUpdateStatus {
 		summary.Error = err.Error()
 		return summary
 	}
+	// Skip projects that have an enabled scheduled update — the
+	// scheduler will check for updates when it runs, so burning
+	// Docker Hub pull budget on a daily manifest inspect is waste.
+	scheduledProjects := m.store.ScheduledProjectNames(ctx)
+
 	for i := range projects {
 		project := &projects[i]
 		if project.Inactive {
+			continue
+		}
+		if scheduledProjects[project.Name] {
 			continue
 		}
 		policy := m.store.ResolveUpdatePolicy(*project)
