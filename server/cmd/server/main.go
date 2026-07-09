@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -118,7 +119,23 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.RealIP)
+	// Trust X-Real-IP from the built-in nginx container unconditionally.
+	// chi's RealIP only trusts loopback, but nginx connects from Docker
+	// bridge IPs (172.x.x.x) which chi rejects.
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if rip := strings.TrimSpace(r.Header.Get("X-Real-IP")); rip != "" {
+				r.RemoteAddr = rip + ":0"
+			} else if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				if idx := strings.Index(xff, ","); idx > 0 {
+					r.RemoteAddr = strings.TrimSpace(xff[:idx]) + ":0"
+				} else {
+					r.RemoteAddr = strings.TrimSpace(xff) + ":0"
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	r.Use(chimw.Timeout(5 * time.Minute))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
@@ -295,7 +312,23 @@ func runAgent(cfg *config.Config, engine *core.Engine) {
 	r := chi.NewRouter()
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.RealIP)
+	// Trust X-Real-IP from the built-in nginx container unconditionally.
+	// chi's RealIP only trusts loopback, but nginx connects from Docker
+	// bridge IPs (172.x.x.x) which chi rejects.
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if rip := strings.TrimSpace(r.Header.Get("X-Real-IP")); rip != "" {
+				r.RemoteAddr = rip + ":0"
+			} else if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				if idx := strings.Index(xff, ","); idx > 0 {
+					r.RemoteAddr = strings.TrimSpace(xff[:idx]) + ":0"
+				} else {
+					r.RemoteAddr = strings.TrimSpace(xff) + ":0"
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	r.Use(chimw.Timeout(5 * time.Minute))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
