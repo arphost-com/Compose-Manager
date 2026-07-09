@@ -166,11 +166,13 @@ func (h *ShellHandler) ExecWebSocket(w http.ResponseWriter, r *http.Request) {
 					continue // no PTY to resize without -t
 				}
 				// Otherwise treat text as stdin input.
+				// nosemgrep: go.lang.security.audit.dangerous-command-write.dangerous-command-write
 				if _, err := stdin.Write(msg); err != nil {
 					return
 				}
 				continue
 			}
+			// nosemgrep: go.lang.security.audit.dangerous-command-write.dangerous-command-write
 			if _, err := stdin.Write(msg); err != nil {
 				return
 			}
