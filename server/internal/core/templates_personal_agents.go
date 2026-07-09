@@ -88,31 +88,6 @@ volumes:
 			Notes:      "This stack mounts the Docker socket so NanoClaw can launch isolated workers. Use only on hosts where that trust boundary is acceptable.",
 		},
 		{
-			ID: "nanobot", Name: "Nanobot",
-			Description: "Lightweight open-source AI agent for tools, chats and workflows, with OpenRouter-style provider configuration.",
-			Category:    "ai", Subcategory: "personal-agents",
-			Source: "github", Image: "ghcr.io/hkuds/nanobot:latest",
-			Tags: []string{"ai", "personal-agent", "workflow", "chat"},
-			ComposeContent: `services:
-  nanobot:
-    image: ghcr.io/hkuds/nanobot:latest
-    command: ["nanobot", "serve", "--host", "0.0.0.0", "--port", "8080"]
-    environment:
-      NANOBOT_TOKEN: ${NANOBOT_TOKEN:?set NANOBOT_TOKEN in .env}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      NANOBOT_MODEL: ${NANOBOT_MODEL:-anthropic/claude-opus-4-6}
-    ports:
-      - "${NANOBOT_PORT:-18792}:8080"
-    volumes:
-      - nanobot-data:/data
-    restart: unless-stopped
-volumes:
-  nanobot-data:
-`,
-			EnvContent: "NANOBOT_PORT=18792\nNANOBOT_TOKEN=\nOPENROUTER_API_KEY=\nNANOBOT_MODEL=anthropic/claude-opus-4-6\n",
-			Notes:      "Run the upstream onboarding flow after first start if the image expects local config files instead of environment-only setup.",
-		},
-		{
 			ID: "hermes-agent", Name: "Hermes Agent",
 			Description: "Nous Research personal agent focused on learning from completed tasks and turning successful patterns into reusable skills.",
 			Category:    "ai", Subcategory: "personal-agents",
@@ -135,54 +110,6 @@ volumes:
 `,
 			EnvContent: "HERMES_PORT=18793\nHERMES_PROVIDER=openai\nHERMES_API_KEY=\n",
 			Notes:      "Good second choice next to OpenClaw for solo-founder workflows where persistent improvement and reusable skills matter.",
-		},
-		{
-			ID: "qwenpaw", Name: "QwenPaw",
-			Description: "Qwen and AgentScope personal assistant with local/cloud deployment, built-in memory, sandbox controls, and multi-channel support.",
-			Category:    "ai", Subcategory: "personal-agents",
-			Source: "github", Image: "ghcr.io/agentscope-ai/qwenpaw:latest",
-			Tags: []string{"ai", "personal-agent", "qwen", "multi-channel"},
-			ComposeContent: `services:
-  qwenpaw:
-    image: ghcr.io/agentscope-ai/qwenpaw:latest
-    environment:
-      QWEN_API_KEY: ${QWEN_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
-    ports:
-      - "${QWENPAW_PORT:-18794}:8080"
-    volumes:
-      - qwenpaw-data:/data
-    restart: unless-stopped
-volumes:
-  qwenpaw-data:
-`,
-			EnvContent: "QWENPAW_PORT=18794\nQWEN_API_KEY=\nOPENAI_API_KEY=\nOLLAMA_BASE_URL=\n",
-			Notes:      "Strong option for Qwen-first customers or customers who need DingTalk, Lark, WeChat, QQ, Discord, Telegram, and iMessage coverage.",
-		},
-		{
-			ID: "openjarvis", Name: "OpenJarvis",
-			Description: "Personal AI for personal devices with persistent autonomous mode and code/task execution options.",
-			Category:    "ai", Subcategory: "personal-agents",
-			Source: "github", Image: "ghcr.io/open-jarvis/openjarvis:latest",
-			Tags: []string{"ai", "personal-agent", "local-first"},
-			ComposeContent: `services:
-  openjarvis:
-    image: ghcr.io/open-jarvis/openjarvis:latest
-    environment:
-      OPENJARVIS_TOKEN: ${OPENJARVIS_TOKEN:?set OPENJARVIS_TOKEN in .env}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    ports:
-      - "${OPENJARVIS_PORT:-18795}:8080"
-    volumes:
-      - openjarvis-data:/data
-    restart: unless-stopped
-volumes:
-  openjarvis-data:
-`,
-			EnvContent: "OPENJARVIS_PORT=18795\nOPENJARVIS_TOKEN=\nOPENAI_API_KEY=\nANTHROPIC_API_KEY=\n",
-			Notes:      "Pair with Ollama or a local inference stack for customer-owned data flows.",
 		},
 		{
 			ID: "moltworker", Name: "Moltworker",

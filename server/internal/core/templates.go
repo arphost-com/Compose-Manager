@@ -3029,11 +3029,11 @@ volumes:
 			Description: "Self-hosted game streaming server compatible with Moonlight clients.",
 			Category:    "gaming",
 			Source:      "linuxserver",
-			Image:       "lscr.io/linuxserver/sunshine:latest",
+			Image:       "lizardbyte/sunshine:latest",
 			Tags:        []string{"gaming", "streaming", "moonlight", "gpu"},
 			ComposeContent: `services:
   sunshine:
-    image: lscr.io/linuxserver/sunshine:latest
+    image: lizardbyte/sunshine:latest
     restart: unless-stopped
     ports:
       - "${SUNSHINE_PORT:-47990}:47990"

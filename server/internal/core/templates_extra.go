@@ -71,25 +71,6 @@ volumes:
 			Notes:      "Provide LLM_API_KEY for the model provider. The agent spawns sandbox containers through the mounted Docker socket.",
 		},
 		{
-			ID: "continue-server", Name: "Continue Server", Description: "Backend for the Continue VS Code / JetBrains extension.",
-			Category: "ai", Subcategory: "code-assistants",
-			Source: "docker-hub", Image: "continuedev/continue-server:latest",
-			Tags: []string{"ai", "code-assistant"},
-			ComposeContent: `services:
-  continue:
-    image: continuedev/continue-server:latest
-    ports:
-      - "${CONTINUE_PORT:-65432}:65432"
-    volumes:
-      - continue-data:/root/.continue
-    restart: unless-stopped
-volumes:
-  continue-data:
-`,
-			EnvContent: "CONTINUE_PORT=65432\n",
-			Notes:      "Point the Continue IDE extension at http://<host>:65432 in its settings.",
-		},
-		{
 			ID: "aider", Name: "Aider CLI Container", Description: "Terminal-based AI pair programmer packaged as a long-lived shell container.",
 			Category: "ai", Subcategory: "code-assistants",
 			Source: "docker-hub", Image: "paulgauthier/aider:latest",
@@ -110,26 +91,6 @@ volumes:
 `,
 			EnvContent: "OPENAI_API_KEY=\nANTHROPIC_API_KEY=\n",
 			Notes:      "Attach with 'docker compose exec aider aider' once the container is up. Place your git repo under ./workspace.",
-		},
-		{
-			ID: "bloop", Name: "bloop", Description: "AI-powered code search server.",
-			Category: "ai", Subcategory: "code-assistants",
-			Source: "docker-hub", Image: "bloopai/bloop:latest",
-			Tags: []string{"ai", "code-search"},
-			ComposeContent: `services:
-  bloop:
-    image: bloopai/bloop:latest
-    ports:
-      - "${BLOOP_PORT:-7878}:7878"
-    volumes:
-      - bloop-data:/data
-      - ./repos:/repos:ro
-    restart: unless-stopped
-volumes:
-  bloop-data:
-`,
-			EnvContent: "BLOOP_PORT=7878\n",
-			Notes:      "Mount the repos you want indexed under ./repos. bloop needs an OpenAI key for full features.",
 		},
 		{
 			ID: "codellama-ollama", Name: "Ollama + Code Llama", Description: "Ollama preloaded with a Code Llama model for local IDE integrations.",
@@ -231,50 +192,13 @@ volumes:
 			Notes:      "GPU strongly recommended. Add 'deploy.resources.reservations.devices' with nvidia driver for CUDA hosts.",
 		},
 		{
-			ID: "kohya-ss", Name: "Kohya SS (LoRA trainer)", Description: "Web UI for Stable Diffusion LoRA and DreamBooth training.",
-			Category: "ai", Subcategory: "image-generation",
-			Source: "docker-hub", Image: "bmaltais/kohya_ss:latest",
-			Tags: []string{"ai", "image", "training", "lora"},
-			ComposeContent: `services:
-  kohya:
-    image: bmaltais/kohya_ss:latest
-    ports:
-      - "${KOHYA_PORT:-7860}:7860"
-    volumes:
-      - ./dataset:/dataset
-      - kohya-config:/config
-    restart: unless-stopped
-volumes:
-  kohya-config:
-`,
-			EnvContent: "KOHYA_PORT=7860\n",
-			Notes:      "Requires an NVIDIA GPU for real training runs.",
-		},
-		{
-			ID: "sd-next", Name: "SD.Next (vladmandic)", Description: "Feature-rich fork of AUTOMATIC1111 Stable Diffusion Web UI.",
-			Category: "ai", Subcategory: "image-generation",
-			Source: "docker-hub", Image: "vladmandic/sdnext:latest",
-			Tags: []string{"ai", "image", "stable-diffusion"},
-			ComposeContent: `services:
-  sdnext:
-    image: vladmandic/sdnext:latest
-    ports:
-      - "${SDNEXT_PORT:-7860}:7860"
-    volumes:
-      - ./data:/data
-    restart: unless-stopped
-`,
-			EnvContent: "SDNEXT_PORT=7860\n",
-			Notes:      "Add GPU device reservations for CUDA/ROCm hosts.",
-		},
-		{
 			ID: "fooocus", Name: "Fooocus", Description: "Streamlined Stable Diffusion UI focused on ease of use.",
 			Category: "ai", Subcategory: "image-generation",
-			Source: "docker-hub", Image: "nykk3/fooocus:latest",
+			Source: "docker-hub", Image: "ghcr.io/lllyasviel/fooocus:latest",
 			Tags: []string{"ai", "image", "stable-diffusion"},
 			ComposeContent: `services:
   fooocus:
-    image: nykk3/fooocus:latest
+    image: ghcr.io/lllyasviel/fooocus:latest
     ports:
       - "${FOOOCUS_PORT:-7865}:7865"
     volumes:
@@ -322,25 +246,6 @@ volumes:
 `,
 			EnvContent: "REMBG_PORT=7000\n",
 			Notes:      "Endpoint at /api/remove — POST an image to receive a PNG with the background removed.",
-		},
-		{
-			ID: "easyphoto", Name: "EasyPhoto (AI portrait)", Description: "Stable Diffusion WebUI extension packaged as a standalone service.",
-			Category: "ai", Subcategory: "image-generation",
-			Source: "docker-hub", Image: "aigc-apps/easyphoto:latest",
-			Tags: []string{"ai", "image", "portrait"},
-			ComposeContent: `services:
-  easyphoto:
-    image: aigc-apps/easyphoto:latest
-    ports:
-      - "${EASYPHOTO_PORT:-7862}:7862"
-    volumes:
-      - easyphoto-data:/data
-    restart: unless-stopped
-volumes:
-  easyphoto-data:
-`,
-			EnvContent: "EASYPHOTO_PORT=7862\n",
-			Notes:      "Confirm the image tag on Docker Hub for your GPU/CPU variant.",
 		},
 
 		// ---- AI: voice-speech (need +8) ----
@@ -427,45 +332,6 @@ volumes:
 			Notes:      "Swap COMPUTE_TYPE to float16 on GPU hosts.",
 		},
 		{
-			ID: "openvoice", Name: "OpenVoice", Description: "MyShell's open-source instant voice cloning server.",
-			Category: "ai", Subcategory: "voice-speech",
-			Source: "docker-hub", Image: "myshell/openvoice:latest",
-			Tags: []string{"ai", "voice-clone", "tts"},
-			ComposeContent: `services:
-  openvoice:
-    image: myshell/openvoice:latest
-    ports:
-      - "${OPENVOICE_PORT:-8083}:8080"
-    volumes:
-      - openvoice-checkpoints:/app/checkpoints
-      - ./samples:/app/samples
-    restart: unless-stopped
-volumes:
-  openvoice-checkpoints:
-`,
-			EnvContent: "OPENVOICE_PORT=8083\n",
-			Notes:      "Provide a short reference clip under ./samples for voice cloning.",
-		},
-		{
-			ID: "bark-tts", Name: "Bark TTS", Description: "Suno Bark generative audio server (community image).",
-			Category: "ai", Subcategory: "voice-speech",
-			Source: "docker-hub", Image: "tekky/bark-tts:latest",
-			Tags: []string{"ai", "tts", "voice"},
-			ComposeContent: `services:
-  bark:
-    image: tekky/bark-tts:latest
-    ports:
-      - "${BARK_PORT:-8084}:8080"
-    volumes:
-      - bark-cache:/root/.cache
-    restart: unless-stopped
-volumes:
-  bark-cache:
-`,
-			EnvContent: "BARK_PORT=8084\n",
-			Notes:      "Slow on CPU. Confirm the tag on Docker Hub for GPU builds.",
-		},
-		{
 			ID: "xtts-server", Name: "XTTS v2 Server", Description: "Coqui XTTS-v2 streaming voice cloning server.",
 			Category: "ai", Subcategory: "voice-speech",
 			Source: "docker-hub", Image: "erew123/alltalk_tts:latest",
@@ -483,25 +349,6 @@ volumes:
 `,
 			EnvContent: "XTTS_PORT=7851\n",
 			Notes:      "First run downloads XTTS weights; keep the volume around for reuse.",
-		},
-		{
-			ID: "rvc-webui", Name: "RVC Voice Conversion", Description: "Retrieval-based Voice Conversion Web UI (community image).",
-			Category: "ai", Subcategory: "voice-speech",
-			Source: "docker-hub", Image: "nateraw/rvc-webui:latest",
-			Tags: []string{"ai", "voice-conversion"},
-			ComposeContent: `services:
-  rvc:
-    image: nateraw/rvc-webui:latest
-    ports:
-      - "${RVC_PORT:-7897}:7897"
-    volumes:
-      - rvc-data:/workspace
-    restart: unless-stopped
-volumes:
-  rvc-data:
-`,
-			EnvContent: "RVC_PORT=7897\n",
-			Notes:      "Needs an NVIDIA GPU for reasonable inference speed.",
 		},
 
 		// ---- AI: vector-db (need +6) ----
@@ -695,26 +542,6 @@ volumes:
 `,
 			EnvContent: "HAYSTACK_PORT=8000\n",
 			Notes:      "Swap image tag to gpu for CUDA hosts.",
-		},
-		{
-			ID: "privategpt", Name: "PrivateGPT", Description: "Offline document Q&A with your local LLM.",
-			Category: "ai", Subcategory: "workflow-rag",
-			Source: "docker-hub", Image: "imartinez/privategpt:latest",
-			Tags: []string{"ai", "rag", "local"},
-			ComposeContent: `services:
-  privategpt:
-    image: imartinez/privategpt:latest
-    ports:
-      - "${PRIVATEGPT_PORT:-8001}:8001"
-    volumes:
-      - privategpt-data:/root
-      - ./source_documents:/home/worker/app/source_documents
-    restart: unless-stopped
-volumes:
-  privategpt-data:
-`,
-			EnvContent: "PRIVATEGPT_PORT=8001\n",
-			Notes:      "Drop source documents in ./source_documents and hit the /ingest endpoint.",
 		},
 		{
 			ID: "dify", Name: "Dify", Description: "LLM app development platform (studio + orchestration).",
@@ -979,11 +806,11 @@ volumes:
 		{
 			ID: "cronicle", Name: "Cronicle", Description: "Multi-server cron scheduler with a web UI.",
 			Category: "automation",
-			Source: "docker-hub", Image: "cronicletab/cronicle:latest",
+			Source: "docker-hub", Image: "ghcr.io/cronicle-edge/cronicle-edge:latest",
 			Tags: []string{"automation", "cron"},
 			ComposeContent: `services:
   cronicle:
-    image: cronicletab/cronicle:latest
+    image: ghcr.io/cronicle-edge/cronicle-edge:latest
     environment:
       CRONICLE_secret_key: ${CRONICLE_SECRET:?set CRONICLE_SECRET in .env}
     ports:
@@ -1004,11 +831,11 @@ volumes:
 		{
 			ID: "strapi", Name: "Strapi Headless CMS", Description: "Open-source headless CMS with an admin panel.",
 			Category: "cms",
-			Source: "docker-hub", Image: "strapi/strapi:latest",
+			Source: "docker-hub", Image: "node:24-bookworm-slim",
 			Tags: []string{"cms", "headless"},
 			ComposeContent: `services:
   strapi:
-    image: strapi/strapi:latest
+    image: node:24-bookworm-slim
     environment:
       DATABASE_CLIENT: sqlite
       DATABASE_FILENAME: /srv/app/data/db.sqlite
@@ -1022,25 +849,6 @@ volumes:
 `,
 			EnvContent: "STRAPI_PORT=1337\n",
 			Notes:      "Use Postgres for production; sqlite is fine for dev only.",
-		},
-		{
-			ID: "concrete-cms", Name: "Concrete CMS", Description: "Traditional CMS with in-context editing.",
-			Category: "cms",
-			Source: "docker-hub", Image: "concretecms/concretecms:latest",
-			Tags: []string{"cms"},
-			ComposeContent: `services:
-  concrete:
-    image: concretecms/concretecms:latest
-    ports:
-      - "${CONCRETE_PORT:-8085}:80"
-    volumes:
-      - concrete-data:/app
-    restart: unless-stopped
-volumes:
-  concrete-data:
-`,
-			EnvContent: "CONCRETE_PORT=8085\n",
-			Notes:      "Attach an external MariaDB in production; the image bundles sqlite for evaluation only.",
 		},
 		{
 			ID: "prestashop", Name: "PrestaShop", Description: "Open-source e-commerce platform.",
