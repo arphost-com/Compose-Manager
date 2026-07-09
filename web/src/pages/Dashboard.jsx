@@ -78,6 +78,9 @@ export default function Dashboard() {
   const [backupDestinations, setBackupDestinations] = useState(initialSnapshot?.backupDestinations || []);
   const [backupSchedules, setBackupSchedules] = useState(initialSnapshot?.backupSchedules || []);
   const [mainTab, setMainTab] = useState('projects');
+  const [serverSource, setServerSource] = useState(() => {
+    try { return localStorage.getItem('cm_server_source') || 'all'; } catch { return 'all'; }
+  });
   const [loading, setLoading] = useState(!initialSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -157,7 +160,7 @@ export default function Dashboard() {
     try {
       if (background) setRefreshing(true); else setLoading(true);
       const [projRes, skillRes, agentRes, scheduleRes, metricsRes, historyRes, backupRes, backupDestRes, backupScheduleRes] = await Promise.all([
-        projects.list({ include_inactive: filters.includeInactive ? 'true' : 'false', running_only: filters.runningOnly ? 'true' : 'false' }),
+        projects.list({ include_inactive: filters.includeInactive ? 'true' : 'false', running_only: filters.runningOnly ? 'true' : 'false', source: serverSource }),
         skillsApi.list(),
         agentsApi.list(),
         schedulesApi.list(),
@@ -216,7 +219,7 @@ export default function Dashboard() {
     } else {
       fetchData();
     }
-  }, [filters.includeInactive, filters.runningOnly]);
+  }, [filters.includeInactive, filters.runningOnly, serverSource]);
 
   const filteredProjects = projectList.filter((p) => {
     const q = filters.query.trim().toLowerCase();
@@ -608,7 +611,14 @@ export default function Dashboard() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-950">Stack Manager</h1>
-          <p className="text-sm text-gray-600">Manage compose projects from the configured Docker root.</p>
+          <div className="mt-1 flex items-center gap-2">
+            <select className="input max-w-[200px]" value={serverSource} onChange={e => { const v = e.target.value; setServerSource(v); try { localStorage.setItem('cm_server_source', v); } catch {} }} title="Filter projects by server. 'All Servers' shows local + agent projects.">
+              <option value="all">All Servers</option>
+              <option value="local">This Server</option>
+              {agentList.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+            </select>
+            <span className="text-sm text-gray-600">{projectList.length} projects</span>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button disabled={refreshing} title="Force a live re-discovery of every project (compose ps, image sources, running state) and clear the server-side cache. Use when container state changed on the host outside the UI (e.g. compose up/down/restart from a shell)." onClick={forceRefresh} className="btn-secondary inline-flex items-center gap-2">
@@ -772,6 +782,7 @@ export default function Dashboard() {
                   <td className="py-3">
                     <ProjectLinks project={p} />
                     <div className="mt-1 flex gap-1">
+                      {p.source_host && p.source_host !== 'local' && <Badge tone="blue">{p.source_host}</Badge>}
                       {p.inactive && <Badge tone="amber">inactive</Badge>}
                       {p.has_hook?.update && <Badge tone="cyan">update hook</Badge>}
                       {p.update_policy?.effective_policy === 'no_updates' && <Badge tone="amber">no updates</Badge>}

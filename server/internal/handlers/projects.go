@@ -107,10 +107,44 @@ func (h *ProjectHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 // List returns all discovered projects.
 func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
-	projects, err := h.discoverProjects(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	source := r.URL.Query().Get("source")
+
+	var projects []core.Project
+
+	// Include local projects unless filtering to a specific agent.
+	if source == "" || source == "all" || source == "local" {
+		local, err := h.discoverProjects(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		for i := range local {
+			local[i].SourceHost = "local"
+		}
+		projects = append(projects, local...)
+	}
+
+	// Include agent projects when viewing all or a specific agent.
+	if source == "" || source == "all" || (source != "local" && source != "") {
+		if h.Store != nil {
+			agents, _ := h.Store.ListAgents(r.Context())
+			for _, agent := range agents {
+				if !agent.Enabled {
+					continue
+				}
+				if source != "" && source != "all" && source != agent.Name {
+					continue
+				}
+				snapshot, err := h.Store.GetAgentProjectSnapshot(r.Context(), agent.ID)
+				if err != nil || snapshot == nil {
+					continue
+				}
+				for i := range snapshot.Projects {
+					snapshot.Projects[i].SourceHost = agent.Name
+				}
+				projects = append(projects, snapshot.Projects...)
+			}
+		}
 	}
 
 	// Apply query filters

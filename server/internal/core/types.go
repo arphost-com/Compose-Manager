@@ -7,6 +7,7 @@ type Project struct {
 	Name          string              `json:"name"`
 	Dir           string              `json:"dir"`
 	ComposeFile   string              `json:"compose_file"`
+	SourceHost    string              `json:"source_host,omitempty"`
 	Inactive      bool                `json:"inactive"`
 	Running       bool                `json:"running"`
 	IsGit         bool                `json:"is_git"`
