@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /stack-manager-server 
 
 ARG BASE_IMAGE_PREFIX=
 FROM ${BASE_IMAGE_PREFIX}alpine:3.22
-RUN apk add --no-cache ca-certificates curl docker-cli docker-cli-compose bash tar gzip git rclone
+RUN apk add --no-cache ca-certificates curl docker-cli docker-cli-compose bash tar gzip git rclone util-linux
 RUN apk upgrade --no-cache
 RUN addgroup -g 1001 -S appgroup && \
     adduser -S appuser -u 1001 -G appgroup && \

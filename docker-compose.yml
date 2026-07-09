@@ -65,6 +65,7 @@ services:
       EXTRA_DOCKER_ROOTS: "${EXTRA_DOCKER_ROOTS:-}"
       FRONTEND_EXTERNAL: "true"
     user: "${SERVER_USER:?SERVER_USER required, set to the host service UID:GID such as 1000:1000}"
+    pid: host
     group_add:
       - "${DOCKER_GID:-0}"
     volumes:

@@ -399,30 +399,21 @@ func (s *Skill) runHelper(ctx context.Context, timeout time.Duration, stdin io.R
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	dockerArgs := []string{"run", "--rm"}
-	if stdin != nil {
-		// Only allocate a stdin FD when we actually have content — an
-		// unconsumed docker -i can hang on some runtimes.
-		dockerArgs = append(dockerArgs, "-i")
+	// Use nsenter to exec into the host's PID 1 namespace instead of
+	// spawning a new Docker container. This is critical for commands
+	// like `csf -r` that flush iptables — a `docker run` container
+	// would destroy its own networking mid-operation and die with
+	// "unexpected EOF". nsenter runs inside the existing server
+	// container process (which has --pid=host via compose) so it
+	// survives the iptables flush.
+	nsenterArgs := []string{
+		"--target", "1",
+		"--mount", "--uts", "--ipc", "--net", "--pid",
+		"--", s.helperPath, sub,
 	}
-	dockerArgs = append(dockerArgs,
-		"--privileged",
-		"--network=host",
-		"--pid=host",
-		"--uts=host",
-		"--ipc=host",
-		"-v", "/:/host",
-		"-e", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		s.baseImagePrefix+defaultHelperImage,
-		"chroot", "/host",
-		s.helperPath, sub,
-	)
-	dockerArgs = append(dockerArgs, args...)
+	nsenterArgs = append(nsenterArgs, args...)
 
-	// Docker CLI is installed at a well-known path by the server
-	// Dockerfile. The literal string keeps semgrep's dangerous-exec
-	// rule happy since the first argument is compile-time constant.
-	cmd := exec.CommandContext(ctx, "docker", dockerArgs...) //nolint:gosec // helper path is a hardcoded default; sub+args validated by the helper
+	cmd := exec.CommandContext(ctx, "nsenter", nsenterArgs...) //nolint:gosec // helper path is a hardcoded default; sub+args validated by the helper
 	cmd.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
 	if stdin != nil {
 		cmd.Stdin = stdin
@@ -434,13 +425,11 @@ func (s *Skill) runHelper(ctx context.Context, timeout time.Duration, stdin io.R
 	out := stdout.String()
 	if err != nil {
 		combined := stderr.String() + " " + out
-		// chroot returns 127 when the target binary is missing. Detect
-		// the specific "helper script not present on the host" case so
-		// callers can surface it as a first-run install prompt rather
-		// than an error toast.
-		if strings.Contains(combined, "chroot") &&
-			strings.Contains(combined, s.helperPath) &&
-			(strings.Contains(combined, "No such file") || strings.Contains(combined, "can't execute")) {
+		// nsenter / chroot returns 127 when the target binary is
+		// missing. Detect the "helper not present" case so callers
+		// can show an install prompt instead of an error toast.
+		if strings.Contains(combined, s.helperPath) &&
+			(strings.Contains(combined, "No such file") || strings.Contains(combined, "can't execute") || strings.Contains(combined, "not found")) {
 			return out, errHelperMissing
 		}
 		return out, fmt.Errorf("helper failed: %s: %s", err.Error(), strings.TrimSpace(stderr.String()))
