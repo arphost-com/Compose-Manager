@@ -168,6 +168,128 @@ const enhancedGuides = {
       ['Docs', 'https://docs.crawl4ai.com/'],
     ],
   },
+  rhasspy: {
+    fit: 'Fully offline voice assistant with wake word, speech-to-text, intent recognition, and text-to-speech — all local.',
+    setup: [
+      'Open the web UI at RHASSPY_PORT (default 12101).',
+      'Select your language profile and download the required models from the settings page.',
+      'Configure wake word (porcupine, snowboy, or raven), speech-to-text (kaldi, deepspeech, or pocketsphinx), and TTS (larynx, flite, or pico).',
+      'Test with the web UI microphone button before connecting to Home Assistant or other integrations.',
+    ],
+    caution: 'Microphone access requires the /dev/snd device mount. Remove it for headless/API-only use.',
+    links: [
+      ['Docs', 'https://rhasspy.readthedocs.io/'],
+      ['GitHub', 'https://github.com/rhasspy/rhasspy'],
+    ],
+  },
+  'whisper-asr': {
+    fit: 'OpenAI Whisper speech-to-text with a REST API for transcription and translation.',
+    setup: [
+      'Start the container — it downloads the Whisper model on first run (small by default).',
+      'Send audio files via POST to /asr for transcription.',
+      'Change ASR_MODEL to medium or large for better accuracy (requires more RAM/VRAM).',
+    ],
+    caution: 'Large models need 4+ GB RAM. GPU recommended for real-time transcription.',
+    links: [
+      ['GitHub', 'https://github.com/ahmetoner/whisper-asr-webservice'],
+    ],
+  },
+  'piper-tts': {
+    fit: 'Fast local text-to-speech over the Wyoming protocol — pairs with Home Assistant.',
+    setup: [
+      'Start the container and it auto-downloads the default English voice.',
+      'Connect from Home Assistant via the Wyoming integration at the configured port.',
+      'Add --voice flag to switch voices. See piper.rhasspy.org for available voice models.',
+    ],
+    caution: 'CPU-only but very fast. One voice per container instance.',
+    links: [
+      ['Voices', 'https://rhasspy.github.io/piper-samples/'],
+      ['GitHub', 'https://github.com/rhasspy/piper'],
+    ],
+  },
+  'openbrain': {
+    fit: 'Full AI agent development stack: Ollama for local LLMs, Open WebUI for chat, Neo4j for knowledge graphs, Temporal for durable workflows.',
+    setup: [
+      'Set POSTGRES_PASSWORD and NEO4J_PASSWORD before starting.',
+      'After boot, pull a model: docker exec <ollama-container> ollama pull llama3.1',
+      'Open WebUI at WEBUI_PORT, Temporal UI at TEMPORAL_UI_PORT, Neo4j Browser at NEO4J_HTTP_PORT.',
+      'Install LangGraph + Graphiti in a Python venv for agent development.',
+    ],
+    caution: 'Heavy stack — recommend 4 vCPU / 16 GB RAM minimum. GPU passthrough recommended for Ollama.',
+    links: [
+      ['Ollama', 'https://ollama.com/'],
+      ['LangGraph', 'https://langchain-ai.github.io/langgraph/'],
+      ['Temporal', 'https://docs.temporal.io/'],
+      ['Neo4j', 'https://neo4j.com/docs/'],
+    ],
+  },
+  'openbrain-mem0': {
+    fit: 'Agent stack with durable memory (Mem0) and workflow automation (n8n) — the "memory + automation" flavour.',
+    setup: [
+      'Set all passwords (POSTGRES_PASSWORD, NEO4J_PASSWORD, MEM0_API_KEY, N8N_PASSWORD) before starting.',
+      'Pull a model: docker exec <ollama-container> ollama pull llama3.1',
+      'Mem0 needs OPENAI_API_KEY or a local model endpoint for memory extraction.',
+      'n8n workflows can call Ollama, Mem0, and Neo4j APIs for end-to-end automation.',
+    ],
+    caution: 'Uses pgvector for vector storage. Even heavier than OpenBrain #1 — plan for 8+ GB RAM.',
+    links: [
+      ['Mem0', 'https://docs.mem0.ai/'],
+      ['n8n', 'https://docs.n8n.io/'],
+      ['Open WebUI', 'https://docs.openwebui.com/'],
+    ],
+  },
+  radarr: {
+    fit: 'Automated movie downloading and management — monitors RSS feeds and grabs releases.',
+    setup: [
+      'Open the web UI at RADARR_PORT (default 7878).',
+      'Add a download client (NZBGet, SABnzbd, qBittorrent, or Transmission).',
+      'Add indexers via Prowlarr or manually in Settings > Indexers.',
+      'Add movies and Radarr will search for and download them automatically.',
+    ],
+    caution: 'Requires a working download client and indexers. Configure quality profiles before adding movies.',
+    links: [
+      ['Docs', 'https://wiki.servarr.com/radarr'],
+      ['GitHub', 'https://github.com/Radarr/Radarr'],
+    ],
+  },
+  sonarr: {
+    fit: 'Automated TV show downloading and management — same ecosystem as Radarr for series.',
+    setup: [
+      'Open the web UI at SONARR_PORT (default 8989).',
+      'Add a download client and indexers (same as Radarr).',
+      'Add TV series and Sonarr monitors for new episodes automatically.',
+    ],
+    caution: 'Same requirements as Radarr. Use Prowlarr to manage indexers across Sonarr + Radarr.',
+    links: [
+      ['Docs', 'https://wiki.servarr.com/sonarr'],
+    ],
+  },
+  jellyfin: {
+    fit: 'Free and open-source media server — stream movies, TV, music, and photos to any device.',
+    setup: [
+      'Open the web UI at the configured port and complete the setup wizard.',
+      'Add media library paths pointing to your mounted volumes.',
+      'Install client apps on your devices (Roku, Fire TV, iOS, Android, web browser).',
+    ],
+    caution: 'Hardware transcoding needs GPU passthrough. Without it, direct play only.',
+    links: [
+      ['Docs', 'https://jellyfin.org/docs/'],
+      ['Clients', 'https://jellyfin.org/downloads/clients/'],
+    ],
+  },
+  'hermes-agent': {
+    fit: 'Autonomous AI agent gateway by NousResearch with OpenAI-compatible API and web dashboard.',
+    setup: [
+      'Set HERMES_API_KEY or ANTHROPIC_API_KEY before starting.',
+      'API available at port 8642 (OpenAI-compatible).',
+      'Dashboard at port 9119 when HERMES_DASHBOARD=1.',
+    ],
+    caution: 'Needs an LLM provider key to function. The agent runs autonomously once configured.',
+    links: [
+      ['Docs', 'https://hermes-agent.nousresearch.com/docs/user-guide/docker'],
+      ['GitHub', 'https://github.com/NousResearch/hermes-agent'],
+    ],
+  },
 };
 
 export default function Documentation() {

@@ -351,6 +351,16 @@ volumes:
 			Notes:      "First run downloads XTTS weights; keep the volume around for reuse.",
 		},
 
+		{
+			ID: "rhasspy", Name: "Rhasspy Voice Assistant", Description: "Fully offline private voice assistant with web UI, wake word, speech-to-text, intent recognition, and text-to-speech.",
+			Category: "ai", Subcategory: "voice-speech",
+			Source: "docker-hub", Image: "rhasspy/rhasspy:latest",
+			Tags: []string{"ai", "voice", "assistant", "offline", "stt", "tts"},
+			ComposeContent: "services:\n  rhasspy:\n    image: rhasspy/rhasspy:latest\n    restart: unless-stopped\n    ports:\n      - \"${RHASSPY_PORT:-12101}:12101\"\n    volumes:\n      - rhasspy-profiles:/profiles\n    devices:\n      - /dev/snd:/dev/snd\n    command: [\"--user-profiles\", \"/profiles\", \"--profile\", \"en\"]\nvolumes:\n  rhasspy-profiles:\n",
+			EnvContent: "RHASSPY_PORT=12101\n",
+			Notes: "Web UI at port 12101. The /dev/snd device mount is for microphone access — remove it if running headless (HTTP API only). Change --profile to your language (en, de, fr, etc.).",
+		},
+
 		// ---- AI: vector-db (need +6) ----
 		{
 			ID: "milvus", Name: "Milvus Standalone", Description: "High-performance open-source vector database (standalone mode).",
