@@ -268,7 +268,14 @@ export default function Settings() {
     if (!domain || !npmHostForm.forward_host || !npmHostForm.forward_port) {
       showError(new Error('Domain, forward host, and forward port are required.')); return;
     }
+    const wantsLE = npmHostForm.letsencrypt;
+    if (wantsLE && !npmHostForm.letsencrypt_email?.trim()) {
+      showError(new Error('An email is required to request a Let’s Encrypt certificate.')); return;
+    }
     try {
+      // NPM provisions a Let's Encrypt cert inline when certificate_id is "new"
+      // plus the letsencrypt meta. The domain must publicly resolve to this host
+      // and port 80 must be reachable for the HTTP-01 challenge.
       await proxyApi.createHost({
         domain_names: [domain],
         forward_scheme: npmHostForm.forward_scheme || 'http',
@@ -278,19 +285,23 @@ export default function Settings() {
         block_exploits: true,
         allow_websocket_upgrade: true,
         access_list_id: 0,
-        certificate_id: 0,
-        meta: { letsencrypt_agree: false, dns_challenge: false },
+        certificate_id: wantsLE ? 'new' : 0,
+        ssl_forced: wantsLE,
+        http2_support: wantsLE,
+        hsts_enabled: false,
+        hsts_subdomains: false,
+        meta: wantsLE
+          ? { letsencrypt_email: npmHostForm.letsencrypt_email.trim(), letsencrypt_agree: true, dns_challenge: false }
+          : { letsencrypt_agree: false, dns_challenge: false },
         advanced_config: '',
         locations: [],
         caching_enabled: false,
-        ssl_forced: false,
-        http2_support: false,
-        hsts_enabled: false,
-        hsts_subdomains: false,
       });
-      showMessage(`Proxy host ${domain} created.`);
-      setNpmHostForm({ domain: '', forward_host: '', forward_port: '', forward_scheme: 'http' });
-      loadProxyStatus();
+      showMessage(wantsLE
+        ? `Proxy host ${domain} created; Let’s Encrypt certificate requested (needs public DNS + port 80).`
+        : `Proxy host ${domain} created.`);
+      setNpmHostForm({ domain: '', forward_host: '', forward_port: '', forward_scheme: 'http', letsencrypt: false, letsencrypt_email: npmHostForm.letsencrypt_email || '' });
+      await loadProxyStatus();
     } catch (err) { showError(err); }
   };
 
@@ -1927,8 +1938,22 @@ export default function Settings() {
                     </select>
                   </Field>
                 </div>
+                <div className="rounded-md border border-gray-200 p-3">
+                  <label className="flex items-center gap-2 text-sm font-medium text-gray-800" title="Request a Let's Encrypt certificate for the domain during creation. The domain must publicly resolve to this host and port 80 must be reachable for the HTTP-01 challenge.">
+                    <input type="checkbox" checked={!!npmHostForm.letsencrypt} onChange={e => setNpmHostForm({ ...npmHostForm, letsencrypt: e.target.checked })} />
+                    Request a Let&rsquo;s Encrypt certificate (force SSL)
+                  </label>
+                  {npmHostForm.letsencrypt && (
+                    <div className="mt-2">
+                      <Field label="Let's Encrypt email">
+                        <input className="input" type="email" value={npmHostForm.letsencrypt_email || ''} onChange={e => setNpmHostForm({ ...npmHostForm, letsencrypt_email: e.target.value })} placeholder="you@example.com" />
+                      </Field>
+                      <p className="mt-1 text-xs text-amber-700">The domain must publicly resolve to this host and port 80 must be reachable, or issuance fails. For private/IP-only hosts, leave this off and use HTTP.</p>
+                    </div>
+                  )}
+                </div>
                 <button className="btn-primary" onClick={createProxyHost}>Create Proxy Host</button>
-                <p className="text-xs text-gray-500">After creating, open <a href={npmStatus?.url || '#'} target="_blank" rel="noreferrer" className="underline text-blue-700">NPM admin</a> to enable SSL and request a Let's Encrypt certificate for this host.</p>
+                <p className="text-xs text-gray-500">New hosts appear in the Proxy Hosts table above. You can also manage SSL, redirects, and advanced options in <a href={npmStatus?.url || '#'} target="_blank" rel="noreferrer" className="underline text-blue-700">NPM admin</a>.</p>
               </div>
 
               <div className="section-panel space-y-3">
