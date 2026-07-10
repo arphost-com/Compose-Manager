@@ -1157,7 +1157,16 @@ volumes:
 			ComposeContent: `services:
   mkdocs:
     image: squidfunk/mkdocs-material:latest
-    command: serve --dev-addr=0.0.0.0:8000
+    # Seed a starter mkdocs.yml + docs/index.md on first run if the mounted
+    # folder is empty, then serve. Without this, "mkdocs serve" crash-loops on
+    # a fresh deploy with "Config file 'mkdocs.yml' does not exist". Everything
+    # is written to ./docs on the host, so edit it there afterward.
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        [ -f mkdocs.yml ] || printf 'site_name: My Docs\ntheme:\n  name: material\n' > mkdocs.yml
+        [ -f docs/index.md ] || { mkdir -p docs; printf '# Welcome\n\nEdit mkdocs.yml and the files under docs/ to build your site.\n' > docs/index.md; }
+        exec mkdocs serve --dev-addr=0.0.0.0:8000
     ports:
       - "${MKDOCS_PORT:-8000}:8000"
     volumes:
@@ -1165,7 +1174,7 @@ volumes:
     restart: unless-stopped
 `,
 			EnvContent: "MKDOCS_PORT=8000\n",
-			Notes:      "Author markdown under ./docs; live reload works out of the box.",
+			Notes:      "Boots with a starter mkdocs.yml + docs/index.md seeded into ./docs on first run (only if missing). Edit those files on the host; live reload picks up changes.",
 		},
 
 		// ---- Non-AI: files +3 ----
