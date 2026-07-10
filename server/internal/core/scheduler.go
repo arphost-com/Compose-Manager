@@ -32,6 +32,7 @@ type ScheduleStore interface {
 	MarkScheduleDispatched(context.Context, int64, time.Time, string, string, string) error
 	GetAgent(context.Context, int64) (*ComposeAgent, error)
 	ResolveUpdatePolicy(Project) ProjectUpdatePolicy
+	EnqueueAgentCommand(context.Context, int64, AgentCommandRequest) (*AgentCommand, error)
 }
 
 type ScheduleManager struct {
@@ -156,8 +157,18 @@ func (m *ScheduleManager) runAgentSchedule(ctx context.Context, schedule UpdateS
 	if !agent.Enabled {
 		return "", fmt.Errorf("agent %s is disabled", agent.Name)
 	}
-	if agent.BaseURL == "" {
-		return "", fmt.Errorf("agent %s uses outbound check-in mode; scheduled remote actions require a command queue", agent.Name)
+	if agent.BaseURL == "" || agent.Mode == "callback" {
+		// Callback agents can't be driven live — queue the action so the agent
+		// runs it on its next check-in (the same command queue the UI uses).
+		cmd, err := m.store.EnqueueAgentCommand(ctx, agent.ID, AgentCommandRequest{
+			Project: schedule.Project,
+			Action:  action,
+			Params:  fmt.Sprintf(`{"timeout":%d}`, schedule.TimeoutSeconds),
+		})
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("agent-cmd-%d", cmd.ID), nil
 	}
 	base, err := url.Parse(agent.BaseURL)
 	if err != nil || base.Scheme == "" || base.Host == "" {
