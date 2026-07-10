@@ -1946,11 +1946,23 @@ volumes:
     restart: unless-stopped
     ports:
       - "${GATUS_PORT:-8080}:8080"
-    volumes:
-      - ./config:/config
+    configs:
+      - source: gatus_config
+        target: /config/config.yaml
+configs:
+  # Starter config with one example endpoint so Gatus boots. Edit this inline
+  # config (Config tab) to monitor your own services.
+  gatus_config:
+    content: |
+      endpoints:
+        - name: example
+          url: "https://example.com"
+          interval: 60s
+          conditions:
+            - "[STATUS] == 200"
 `,
 			EnvContent: "GATUS_PORT=8080\n",
-			Notes:      "Create config/config.yaml before starting, or edit the bind mount.",
+			Notes:      "Boots with one example endpoint. Edit the inline config (Config tab) to add your own service checks.",
 		},
 		{
 			ID:          "ghost-mysql",
