@@ -1669,8 +1669,10 @@ volumes:
     ports:
       - "${CADDY_HTTP:-8082}:80"
       - "${CADDY_HTTPS:-8443}:443"
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./html:/usr/share/caddy
       - caddy-data:/data
       - caddy-config:/config
@@ -1678,9 +1680,19 @@ volumes:
 volumes:
   caddy-data:
   caddy-config:
+configs:
+  # Starter Caddyfile: serve the ./html folder with a file browser on :80. Add a
+  # 'basicauth' block (edit the Config tab) to gate access, or point it at your
+  # own domain to get automatic HTTPS.
+  caddyfile:
+    content: |
+      :80 {
+        root * /usr/share/caddy
+        file_server browse
+      }
 `,
 			EnvContent: "CADDY_HTTP=8082\nCADDY_HTTPS=8443\n",
-			Notes:      "Author a Caddyfile with 'basicauth' directives to gate access.",
+			Notes:      "Boots serving ./html with directory browsing on the HTTP port. Add a basicauth block or a real domain (for auto-HTTPS) by editing the inline Caddyfile (Config tab).",
 		},
 
 		// ---- Non-AI: proxy +7 ----
