@@ -66,9 +66,16 @@ func (h *AgentProxyHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build the target URL: agent's base_url + /agent/v1/ + remaining path.
+	// Peers are full controllers: forward to their /api/v1 with the peer's API
+	// key. Inbound agents forward to /agent/v1 with a bearer token.
+	isPeer := agent.Mode == "peer"
 	remaining := chi.URLParam(r, "*")
-	targetURL := strings.TrimRight(agent.BaseURL, "/") + "/agent/v1/" + remaining
+	var targetURL string
+	if isPeer {
+		targetURL = peerAPIBase(agent.BaseURL) + "/" + remaining
+	} else {
+		targetURL = strings.TrimRight(agent.BaseURL, "/") + "/agent/v1/" + remaining
+	}
 	if r.URL.RawQuery != "" {
 		targetURL += "?" + r.URL.RawQuery
 	}
@@ -82,8 +89,13 @@ func (h *AgentProxyHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Forward auth + content type.
-	proxyReq.Header.Set("Authorization", "Bearer "+agent.Token)
+	// Forward auth + content type. Peers authenticate with the controller API
+	// key header; agents use a bearer token.
+	if isPeer {
+		proxyReq.Header.Set("X-API-Key", agent.Token)
+	} else {
+		proxyReq.Header.Set("Authorization", "Bearer "+agent.Token)
+	}
 	if ct := r.Header.Get("Content-Type"); ct != "" {
 		proxyReq.Header.Set("Content-Type", ct)
 	}

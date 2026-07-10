@@ -135,6 +135,19 @@ func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
 				if source != "" && source != "all" && source != agent.Name {
 					continue
 				}
+				// Peer controllers are live-fetched from their /api/v1 rather
+				// than read from a check-in snapshot: a peer is a full
+				// controller that never pushes to us.
+				if agent.Mode == "peer" {
+					peerProjects, err := fetchPeerProjects(r.Context(), &agent, r.URL.RawQuery)
+					if err != nil {
+						// Skip an unreachable peer instead of failing the whole
+						// dashboard; its containers just won't appear this load.
+						continue
+					}
+					projects = append(projects, peerProjects...)
+					continue
+				}
 				snapshot, err := h.Store.GetAgentProjectSnapshot(r.Context(), agent.ID)
 				if err != nil || snapshot == nil {
 					continue

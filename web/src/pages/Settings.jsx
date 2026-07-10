@@ -1272,7 +1272,12 @@ export default function Settings() {
                     {agentList.map(agent => (
                       <tr key={agent.id} className="border-b border-gray-100 align-top">
                         <td className="py-2 pr-2 font-medium break-all">{agent.name}</td>
-                        <td className="pr-2"><Badge tone={(agent.mode || (agent.base_url ? 'inbound' : 'callback')) === 'callback' ? 'blue' : 'gray'}>{(agent.mode || (agent.base_url ? 'inbound' : 'callback')) === 'callback' ? 'check-in' : 'inbound'}</Badge></td>
+                        <td className="pr-2">{(() => {
+                          const m = agent.mode || (agent.base_url ? 'inbound' : 'callback');
+                          const label = m === 'callback' ? 'check-in' : m === 'peer' ? 'peer' : m === 'both' ? 'both' : 'inbound';
+                          const tone = m === 'peer' ? 'violet' : m === 'callback' ? 'blue' : 'gray';
+                          return <Badge tone={tone}>{label}</Badge>;
+                        })()}</td>
                         <td className="pr-2 font-mono text-xs text-gray-600 break-all" title={agent.base_url}>{agent.base_url}</td>
                         <td className="pr-2"><Badge tone={agent.enabled ? 'green' : 'gray'}>{agent.enabled ? 'enabled' : 'disabled'}</Badge></td>
                         <td className="pr-2 text-xs text-gray-500 break-words">{formatDate(agent.last_seen)}</td>
@@ -1293,17 +1298,18 @@ export default function Settings() {
               <Field label="Name" title="Friendly unique name for the remote compose host. Saving an existing name updates it.">
                 <input value={agentForm.name} onChange={e => setAgentForm({ ...agentForm, name: e.target.value })} className="input" placeholder="docker03" required />
               </Field>
-              <Field label="Mode" title="Outbound check-in is for clients that cannot accept inbound connections. Inbound URL is for directly reachable agents.">
+              <Field label="Mode" title="Outbound check-in and Inbound URL are for lightweight agents. Peer controller is another full Stack Manager (its own UI) that this controller manages over its /api/v1 using that controller's API key.">
                 <select value={agentForm.mode} onChange={e => setAgentForm({ ...agentForm, mode: e.target.value })} className="input">
-                  <option value="callback">Outbound check-in</option>
-                  <option value="inbound">Inbound URL</option>
+                  <option value="callback">Outbound check-in (agent)</option>
+                  <option value="inbound">Inbound URL (agent)</option>
+                  <option value="peer">Peer controller (full UI)</option>
                 </select>
               </Field>
-              <Field label="Agent URL" title="Base URL for inbound agents only, for example https://docker03.example.com:8192. Leave blank for outbound check-in agents.">
-                <input value={agentForm.base_url} onChange={e => setAgentForm({ ...agentForm, base_url: e.target.value })} className="input" placeholder="https://host:8192" required={agentForm.mode === 'inbound'} />
+              <Field label={agentForm.mode === 'peer' ? 'Controller URL' : 'Agent URL'} title={agentForm.mode === 'peer' ? "The peer controller's HTTPS URL, e.g. https://10.10.10.94:8993. Register this controller as a peer on that one too, so both dashboards see both servers." : 'Base URL for inbound agents only, for example https://docker03.example.com:8192. Leave blank for outbound check-in agents.'}>
+                <input value={agentForm.base_url} onChange={e => setAgentForm({ ...agentForm, base_url: e.target.value })} className="input" placeholder={agentForm.mode === 'peer' ? 'https://10.10.10.94:8993' : 'https://host:8192'} required={agentForm.mode === 'inbound' || agentForm.mode === 'peer'} />
               </Field>
-              <Field label="Token" title="Bearer token used by the agent and controller. Leave blank when editing to keep the saved token.">
-                <input type="password" value={agentForm.token} onChange={e => setAgentForm({ ...agentForm, token: e.target.value })} className="input" placeholder={agentForm.id ? 'leave blank to keep saved token' : 'agent token'} />
+              <Field label={agentForm.mode === 'peer' ? 'API key' : 'Token'} title={agentForm.mode === 'peer' ? "The peer controller's API_KEY (Settings > General, or its .env). Sent as X-API-Key. Leave blank when editing to keep the saved key." : 'Bearer token used by the agent and controller. Leave blank when editing to keep the saved token.'}>
+                <input type="password" value={agentForm.token} onChange={e => setAgentForm({ ...agentForm, token: e.target.value })} className="input" placeholder={agentForm.id ? 'leave blank to keep saved value' : (agentForm.mode === 'peer' ? "peer controller's API key" : 'agent token')} required={agentForm.mode === 'peer' && !agentForm.id} />
               </Field>
               <label className="flex items-center gap-2 text-sm text-gray-700" title="Disabled agents remain saved but scheduled actions will not run.">
                 <input type="checkbox" checked={agentForm.enabled} onChange={e => setAgentForm({ ...agentForm, enabled: e.target.checked })} />
@@ -2332,6 +2338,7 @@ function Badge({ tone = 'gray', children }) {
     green: 'bg-green-100 text-green-800',
     red: 'bg-red-100 text-red-800',
     blue: 'bg-blue-100 text-blue-800',
+    violet: 'bg-violet-100 text-violet-800',
   };
   return <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${tones[tone] || tones.gray}`}>{children}</span>;
 }

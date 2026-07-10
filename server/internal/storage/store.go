@@ -141,6 +141,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 			id BIGINT AUTO_INCREMENT PRIMARY KEY,
 			name VARCHAR(128) NOT NULL UNIQUE,
 			base_url VARCHAR(512) NOT NULL,
+			mode VARCHAR(16) NOT NULL DEFAULT '',
 			token TEXT NOT NULL,
 			enabled BOOLEAN NOT NULL DEFAULT TRUE,
 			last_seen DATETIME(6) NULL,
@@ -267,6 +268,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		`ALTER TABLE users ADD COLUMN totp_secret VARCHAR(64) NOT NULL DEFAULT '' AFTER role`,
 		`ALTER TABLE users ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT FALSE AFTER totp_secret`,
 		`ALTER TABLE users ADD COLUMN totp_backup_codes TEXT NULL AFTER totp_enabled`,
+		`ALTER TABLE compose_agents ADD COLUMN mode VARCHAR(16) NOT NULL DEFAULT '' AFTER base_url`,
 	}
 	for _, stmt := range alterStmts {
 		_, err := s.DB.ExecContext(ctx, stmt)
@@ -635,7 +637,7 @@ func (s *Store) ListAgents(ctx context.Context) ([]core.ComposeAgent, error) {
 		return cached, nil
 	}
 
-	rows, err := s.DB.QueryContext(ctx, `SELECT id, name, base_url, token, enabled, last_seen, created_at, updated_at FROM compose_agents ORDER BY name`)
+	rows, err := s.DB.QueryContext(ctx, `SELECT id, name, base_url, mode, token, enabled, last_seen, created_at, updated_at FROM compose_agents ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -657,7 +659,7 @@ func (s *Store) ListAgents(ctx context.Context) ([]core.ComposeAgent, error) {
 }
 
 func (s *Store) GetAgent(ctx context.Context, id int64) (*core.ComposeAgent, error) {
-	agent, err := scanAgent(s.DB.QueryRowContext(ctx, `SELECT id, name, base_url, token, enabled, last_seen, created_at, updated_at FROM compose_agents WHERE id=?`, id))
+	agent, err := scanAgent(s.DB.QueryRowContext(ctx, `SELECT id, name, base_url, mode, token, enabled, last_seen, created_at, updated_at FROM compose_agents WHERE id=?`, id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -668,7 +670,7 @@ func (s *Store) GetAgent(ctx context.Context, id int64) (*core.ComposeAgent, err
 }
 
 func (s *Store) GetAgentByName(ctx context.Context, name string) (*core.ComposeAgent, error) {
-	agent, err := scanAgent(s.DB.QueryRowContext(ctx, `SELECT id, name, base_url, token, enabled, last_seen, created_at, updated_at FROM compose_agents WHERE name=?`, name))
+	agent, err := scanAgent(s.DB.QueryRowContext(ctx, `SELECT id, name, base_url, mode, token, enabled, last_seen, created_at, updated_at FROM compose_agents WHERE name=?`, name))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -685,14 +687,15 @@ func (s *Store) SaveAgent(ctx context.Context, req core.ComposeAgentRequest) (*c
 		enabled = *req.Enabled
 	}
 	res, err := s.DB.ExecContext(ctx, `INSERT INTO compose_agents
-		(name, base_url, token, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		(name, base_url, mode, token, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			base_url=VALUES(base_url),
+			mode=VALUES(mode),
 			token=IF(VALUES(token)='', token, VALUES(token)),
 			enabled=VALUES(enabled),
 			updated_at=VALUES(updated_at)`,
-		req.Name, req.BaseURL, req.Token, enabled, now, now)
+		req.Name, req.BaseURL, normalizeAgentMode(req.Mode, req.BaseURL), req.Token, enabled, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -1066,18 +1069,44 @@ type agentScanner interface {
 func scanAgent(scanner agentScanner) (*core.ComposeAgent, error) {
 	var agent core.ComposeAgent
 	var lastSeen sql.NullTime
-	if err := scanner.Scan(&agent.ID, &agent.Name, &agent.BaseURL, &agent.Token, &agent.Enabled, &lastSeen, &agent.CreatedAt, &agent.UpdatedAt); err != nil {
+	var mode string
+	if err := scanner.Scan(&agent.ID, &agent.Name, &agent.BaseURL, &mode, &agent.Token, &agent.Enabled, &lastSeen, &agent.CreatedAt, &agent.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if lastSeen.Valid {
 		agent.LastSeen = &lastSeen.Time
 	}
-	if agent.BaseURL == "" {
-		agent.Mode = "callback"
-	} else {
-		agent.Mode = "inbound"
+	// Prefer the stored mode; fall back to the historical base_url heuristic for
+	// rows written before the mode column existed.
+	agent.Mode = strings.TrimSpace(mode)
+	if agent.Mode == "" {
+		if agent.BaseURL == "" {
+			agent.Mode = "callback"
+		} else {
+			agent.Mode = "inbound"
+		}
 	}
 	return &agent, nil
+}
+
+// normalizeAgentMode maps request mode values to the stored set
+// (callback | inbound | both | peer). Empty/unknown falls back to the base_url
+// heuristic so existing agent-registration callers keep working unchanged.
+func normalizeAgentMode(mode, baseURL string) string {
+	switch strings.TrimSpace(strings.ToLower(mode)) {
+	case "peer":
+		return "peer"
+	case "callback", "agent-callback":
+		return "callback"
+	case "inbound", "agent":
+		return "inbound"
+	case "both", "agent-both":
+		return "both"
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		return "callback"
+	}
+	return "inbound"
 }
 
 func scanSchedule(scanner jobScanner) (*core.UpdateSchedule, error) {
