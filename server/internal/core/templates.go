@@ -1526,8 +1526,13 @@ volumes:
     volumes:
       - beszel-data:/beszel_data
       - beszel-socket:/beszel_socket
+  # The agent needs a KEY + TOKEN issued by the hub's "Add System" flow, so it
+  # is behind the "agent" profile and does NOT start on a plain up. Boot the hub
+  # first, create the admin user, add a system to get the KEY/TOKEN, put them in
+  # .env, then start the agent: docker compose --profile agent up -d
   beszel-agent:
     image: henrygd/beszel-agent:latest
+    profiles: ["agent"]
     restart: unless-stopped
     network_mode: host
     environment:
@@ -1545,7 +1550,7 @@ volumes:
   beszel-socket:
 `,
 			EnvContent: "BESZEL_PORT=8090\nBESZEL_APP_URL=http://localhost:8090\nBESZEL_AGENT_TOKEN=\nBESZEL_AGENT_KEY=\n",
-			Notes:      "Create the admin user first, then fill BESZEL_AGENT_TOKEN and BESZEL_AGENT_KEY from the Add System flow.",
+			Notes:      "The hub boots on its own. Create the admin user, add a system to get its KEY + TOKEN, put them in .env, then start the local agent with: docker compose --profile agent up -d",
 		},
 		{
 			ID:          "calibre-web",

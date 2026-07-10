@@ -843,12 +843,13 @@ volumes:
 			ComposeContent: `services:
   huginn:
     image: huginn/huginn
-    environment:
-      HUGINN_DATABASE_ADAPTER: sqlite3
+    # The all-in-one huginn/huginn image bundles its own MySQL. Do not set
+    # HUGINN_DATABASE_ADAPTER=sqlite3 -- huginn only supports mysql2/postgresql
+    # and that override crash-loops the container.
     ports:
       - "${HUGINN_PORT:-3010}:3000"
     volumes:
-      - huginn-data:/app/data
+      - huginn-data:/var/lib/mysql
     restart: unless-stopped
 volumes:
   huginn-data:
@@ -883,8 +884,13 @@ volumes:
 			ComposeContent: `services:
   cronicle:
     image: ghcr.io/cronicle-edge/cronicle-edge:latest
+    # The image ships no default command (just tini), so it must be told to run
+    # the foreground manager, or it prints tini help and exits.
+    command: ["/opt/cronicle/bin/manager"]
     environment:
-      CRONICLE_secret_key: ${CRONICLE_SECRET:?set CRONICLE_SECRET in .env}
+      CRONICLE_secret_key: ${CRONICLE_SECRET:-change-me-to-a-random-secret}
+      CRONICLE_foreground: "1"
+      CRONICLE_echo: "1"
     ports:
       - "${CRONICLE_PORT:-3012}:3012"
     volumes:
@@ -895,8 +901,8 @@ volumes:
   cronicle-data:
   cronicle-logs:
 `,
-			EnvContent: "CRONICLE_PORT=3012\nCRONICLE_SECRET=change-me-32-chars-minimum\n",
-			Notes:      "Confirm the image tag on Docker Hub; several community forks exist.",
+			EnvContent: "CRONICLE_PORT=3012\nCRONICLE_SECRET=change-me-to-a-random-secret\n",
+			Notes:      "Boots the foreground manager and the web UI on CRONICLE_PORT. Change CRONICLE_SECRET to a random value before real use. Default admin login is admin / admin.",
 		},
 
 		// ---- Non-AI: cms +3 ----
