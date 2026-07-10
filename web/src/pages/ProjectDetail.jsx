@@ -1,6 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useLocation, useNavigate } from 'react-router-dom';
-import { projects, jobs, debug as debugApi, security, backup, dbadmin, watch as watchApi } from '../api/client';
+import { projects, jobs, debug as debugApi, security, backup, dbadmin, watch as watchApi, firewall as firewallApi, proxy as proxyApi } from '../api/client';
+
+// parsePublishedPorts pulls unique host-published TCP ports from a project's
+// containers (Docker port strings like "0.0.0.0:8080->80/tcp").
+function parsePublishedPorts(project) {
+  const ports = new Set();
+  for (const c of project?.containers || []) {
+    for (const mapping of (c.ports || '').split(',')) {
+      const m = mapping.trim().match(/:(\d+)->\d+\/tcp/);
+      if (m && m[1] !== '0') ports.add(m[1]);
+    }
+  }
+  return [...ports];
+}
 import { useFollowingScroll } from '../hooks/useFollowingScroll';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -167,6 +180,52 @@ export default function ProjectDetail() {
     }
   };
 
+  // Open this project's published ports in the host CSF firewall.
+  const openFirewallPorts = async () => {
+    const ports = parsePublishedPorts(project);
+    if (ports.length === 0) {
+      setActionResult({ status: 'error', label: 'firewall ports', error: 'No published TCP ports found for this project.' });
+      return;
+    }
+    if (!window.confirm(`Open ${ports.length} port${ports.length === 1 ? '' : 's'} (${ports.join(', ')}) inbound in the host CSF firewall?`)) return;
+    try {
+      setActionResult({ status: 'running', label: 'firewall ports' });
+      const res = await firewallApi.allowPorts(ports, 'tcp');
+      setActionResult({ status: 'done', label: 'firewall ports', result: res.data });
+    } catch (err) {
+      setActionResult({ status: 'error', label: 'firewall ports', error: err.message });
+    }
+  };
+
+  // Create an NPM proxy host for this project (domain = project name, editable
+  // in NPM after). Forwards to this host and the project's first published port.
+  const addToProxy = async () => {
+    const ports = parsePublishedPorts(project);
+    if (ports.length === 0) {
+      setActionResult({ status: 'error', label: 'add to proxy', error: 'No published TCP ports found for this project.' });
+      return;
+    }
+    const status = await proxyApi.status().catch(() => ({ data: {} }));
+    if (!status.data?.connected) {
+      setActionResult({ status: 'error', label: 'add to proxy', error: 'Nginx Proxy Manager is not connected. Set it up in Settings > Reverse Proxy first.' });
+      return;
+    }
+    const port = ports[0];
+    if (!window.confirm(`Create an NPM proxy host for "${name}" forwarding to ${window.location.hostname}:${port}? You can set the real domain and SSL in NPM afterward.`)) return;
+    try {
+      setActionResult({ status: 'running', label: 'add to proxy' });
+      await proxyApi.createHost({
+        domain_names: [name], forward_scheme: 'http', forward_host: window.location.hostname, forward_port: Number(port),
+        enabled: true, block_exploits: true, allow_websocket_upgrade: true, access_list_id: 0, certificate_id: 0,
+        meta: { letsencrypt_agree: false, dns_challenge: false }, advanced_config: '', locations: [],
+        caching_enabled: false, ssl_forced: false, http2_support: false, hsts_enabled: false, hsts_subdomains: false,
+      });
+      setActionResult({ status: 'done', label: 'add to proxy', result: { output: `Created proxy host "${name}" -> ${window.location.hostname}:${port}. Edit the domain and enable SSL in NPM.` } });
+    } catch (err) {
+      setActionResult({ status: 'error', label: 'add to proxy', error: err.message });
+    }
+  };
+
   const pollJob = (jobId, label) => {
     const tick = async () => {
       try {
@@ -314,6 +373,8 @@ export default function ProjectDetail() {
           </select>
           <button title="Create a tar.gz backup of the project directory. Choose a destination to also copy it to configured storage." onClick={createBackup} className="btn-secondary">Backup</button>
           <button title="Dump supported database containers in this project." onClick={dumpDatabases} className="btn-secondary">DB Dump</button>
+          <button title="Open this project's published TCP ports inbound in the host CSF firewall." onClick={openFirewallPorts} className="btn-secondary">Open Ports (CSF)</button>
+          <button title="Create an Nginx Proxy Manager proxy host for this project (requires NPM connected in Settings). Domain and SSL are editable in NPM after." onClick={addToProxy} className="btn-secondary">Add to Proxy (NPM)</button>
           {project.is_git && (
             <button
               title="Run git pull --ff-only in the project directory. Only applies for projects that are a git checkout."

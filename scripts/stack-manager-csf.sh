@@ -146,6 +146,47 @@ cmd_allow_ip() {
   fi
 }
 
+cmd_allow_port() {
+  local port="$1" proto="${2:-tcp}"
+  [[ "$port" =~ ^[0-9]+$ ]] || die "port must be numeric"
+  (( port >= 1 && port <= 65535 )) || die "port out of range: $port"
+  case "$proto" in tcp|udp) ;; *) die "proto must be tcp or udp" ;; esac
+  require_csf
+  local conf="$CSF_ETC/csf.conf"
+  [[ -f "$conf" ]] || die "csf.conf not found at $conf"
+
+  local keys
+  if [[ "$proto" == tcp ]]; then keys="TCP_IN TCP6_IN"; else keys="UDP_IN UDP6_IN"; fi
+
+  # Back up csf.conf once before editing.
+  local backup_dir="${STACK_MANAGER_CSF_BACKUP_DIR:-/var/backups/stack-manager-csf}"
+  mkdir -p "$backup_dir"; chmod 700 "$backup_dir"
+  cp -a "$conf" "$backup_dir/csf.conf.$(date -u +%Y%m%dT%H%M%SZ)"
+
+  local changed=0
+  for key in $keys; do
+    # Only touch keys that actually exist in this csf.conf.
+    grep -Eq "^${key}[[:space:]]*=" "$conf" || continue
+    local cur
+    cur="$(awk -F'=' -v k="$key" '$0 ~ "^"k"[[:space:]]*="{gsub(/[" ]/,"",$2); print $2; exit}' "$conf")"
+    if printf ',%s,' "$cur" | grep -q ",${port},"; then
+      continue  # already open
+    fi
+    local newlist
+    if [[ -n "$cur" ]]; then newlist="${cur},${port}"; else newlist="${port}"; fi
+    sed -i "s|^${key}[[:space:]]*=.*|${key} = \"${newlist}\"|" "$conf"
+    changed=1
+    log "Added ${port} to ${key}"
+  done
+
+  if (( changed == 1 )); then
+    "$CSF_BIN" -r >/dev/null 2>&1 || true
+    printf 'opened %s/%s\n' "$port" "$proto"
+  else
+    printf 'port %s/%s already open\n' "$port" "$proto"
+  fi
+}
+
 cmd_deny_ip() {
   local ip="$1" comment="$2"
   validate_ip "$ip"
@@ -336,6 +377,7 @@ case "$sub" in
   list-tempbans)   cmd_list_tempbans           ;;
   tail-log)        cmd_tail_log "$@"           ;;
   allow-ip)        [[ $# -ge 2 ]] || die "allow-ip requires <ip> <comment>"; cmd_allow_ip "$1" "$2" ;;
+  allow-port)      [[ $# -ge 1 ]] || die "allow-port requires <port> [tcp|udp]"; cmd_allow_port "$1" "${2:-tcp}" ;;
   deny-ip)         [[ $# -ge 2 ]] || die "deny-ip requires <ip> <comment>"; cmd_deny_ip "$1" "$2" ;;
   remove-ip)       [[ $# -ge 1 ]] || die "remove-ip requires <ip>"; cmd_remove_ip "$1" ;;
   read-config)     [[ $# -ge 1 ]] || die "read-config requires <name>"; cmd_read_config "$1" ;;

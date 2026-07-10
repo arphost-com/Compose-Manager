@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,6 +54,10 @@ var allowedConfigs = map[string]struct{}{
 	"csf.ignore":  {},
 	"csf.pignore": {},
 }
+
+// portRe validates a TCP/UDP port number (1-65535) before it is passed to the
+// helper's allow-port command.
+var portRe = regexp.MustCompile(`^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$`)
 
 // Skill exposes CSF operations over the /api/v1/skills/firewall/ route
 // group. It also satisfies auth.IPAllower so the login handler can
@@ -115,6 +120,7 @@ func (s *Skill) RegisterRoutes(r chi.Router) {
 		gr.Get("/tempbans", s.handleListTempbans)
 		gr.Post("/ips/allow", s.handleAllowIP)
 		gr.Post("/ips/deny", s.handleDenyIP)
+		gr.Post("/ports/allow", s.handleAllowPorts)
 		gr.Delete("/ips/{ip}", s.handleRemoveIP)
 		gr.Get("/config/{name}", s.handleReadConfig)
 		gr.Put("/config/{name}", s.handleWriteConfig)
@@ -317,6 +323,43 @@ func (s *Skill) handleAllowIP(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := s.runHelper(r.Context(), commandTimeout, nil, "allow-ip", ip, comment)
 	writeCommandResult(w, out, err)
+}
+
+// handleAllowPorts opens one or more inbound ports in CSF (adds them to
+// TCP_IN/UDP_IN and reloads). Body: {"ports":["8080","443"],"proto":"tcp"}.
+// Each port is validated as numeric before it reaches the helper.
+func (s *Skill) handleAllowPorts(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Ports []string `json:"ports"`
+		Proto string   `json:"proto"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	proto := strings.ToLower(strings.TrimSpace(body.Proto))
+	if proto != "udp" {
+		proto = "tcp"
+	}
+	if len(body.Ports) == 0 {
+		writeError(w, http.StatusBadRequest, "no ports provided")
+		return
+	}
+	results := make([]map[string]string, 0, len(body.Ports))
+	for _, p := range body.Ports {
+		p = strings.TrimSpace(p)
+		if !portRe.MatchString(p) {
+			results = append(results, map[string]string{"port": p, "status": "skipped", "detail": "not a valid port"})
+			continue
+		}
+		out, err := s.runHelper(r.Context(), commandTimeout, nil, "allow-port", p, proto)
+		if err != nil {
+			results = append(results, map[string]string{"port": p, "status": "error", "detail": strings.TrimSpace(out) + " " + err.Error()})
+			continue
+		}
+		results = append(results, map[string]string{"port": p, "status": "ok", "detail": strings.TrimSpace(out)})
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"proto": proto, "results": results})
 }
 
 func (s *Skill) handleDenyIP(w http.ResponseWriter, r *http.Request) {
