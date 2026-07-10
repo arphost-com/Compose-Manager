@@ -140,16 +140,22 @@ func (h *AgentHandler) Save(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "agent name is required")
 		return
 	}
-	if req.Mode != "inbound" && req.Mode != "callback" {
-		writeError(w, http.StatusBadRequest, "agent mode must be inbound or callback")
+	switch req.Mode {
+	case "callback":
+		req.BaseURL = "" // outbound agents phone home; they have no base URL
+	case "inbound", "both":
+		if req.BaseURL == "" {
+			writeError(w, http.StatusBadRequest, "agent URL is required for inbound/both mode")
+			return
+		}
+	case "peer":
+		if req.BaseURL == "" {
+			writeError(w, http.StatusBadRequest, "controller URL is required for peer mode")
+			return
+		}
+	default:
+		writeError(w, http.StatusBadRequest, "agent mode must be callback, inbound, both, or peer")
 		return
-	}
-	if req.Mode == "inbound" && req.BaseURL == "" {
-		writeError(w, http.StatusBadRequest, "agent URL is required for inbound mode")
-		return
-	}
-	if req.Mode == "callback" {
-		req.BaseURL = ""
 	}
 	if strings.TrimSpace(req.Token) == "" {
 		if _, err := h.Store.GetAgentByName(r.Context(), req.Name); err != nil {
