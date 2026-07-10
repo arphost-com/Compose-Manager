@@ -914,9 +914,22 @@ volumes:
 			ComposeContent: `services:
   strapi:
     image: node:24-bookworm-slim
+    working_dir: /srv/app
+    # There is no turnkey Strapi image (apps are project-specific), so scaffold a
+    # fresh Strapi app into the volume on first run, then start it. First boot
+    # takes a few minutes (npm install + scaffold); after that it starts fast.
+    command:
+      - sh
+      - -c
+      - |
+        if [ ! -f package.json ]; then
+          echo "Scaffolding Strapi (first run, a few minutes)..."
+          npx -y create-strapi-app@latest . --quickstart --no-run --skip-cloud --use-npm
+        fi
+        exec npm run develop
     environment:
-      DATABASE_CLIENT: sqlite
-      DATABASE_FILENAME: /srv/app/data/db.sqlite
+      HOST: 0.0.0.0
+      PORT: "1337"
     ports:
       - "${STRAPI_PORT:-1337}:1337"
     volumes:
@@ -926,7 +939,7 @@ volumes:
   strapi-data:
 `,
 			EnvContent: "STRAPI_PORT=1337\n",
-			Notes:      "Use Postgres for production; sqlite is fine for dev only.",
+			Notes:      "First boot scaffolds a fresh Strapi app into the volume and can take several minutes (watch the logs). Then open the admin at /admin to create your first admin user. Uses the scaffold's default SQLite; switch to Postgres in the generated .env for production.",
 		},
 		{
 			ID: "prestashop", Name: "PrestaShop", Description: "Open-source e-commerce platform.",
