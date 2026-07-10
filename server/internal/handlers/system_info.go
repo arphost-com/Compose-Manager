@@ -23,7 +23,7 @@ func NewSystemInfoHandler(store *storage.Store) *SystemInfoHandler {
 
 func (h *SystemInfoHandler) serverName(r *http.Request) string {
 	if h.Store != nil {
-		if v, err := h.Store.GetSetting(r.Context(), "server_display_name"); err == nil {
+		if v, ok := h.Store.GetSettingString(r.Context(), "server_display_name"); ok {
 			if s := strings.TrimSpace(v); s != "" {
 				return s
 			}
@@ -56,7 +56,7 @@ func (h *SystemInfoHandler) Save(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "settings store unavailable")
 		return
 	}
-	if err := h.Store.SetSetting(r.Context(), "server_display_name", strings.TrimSpace(req.ServerName)); err != nil {
+	if err := h.Store.SetSettingString(r.Context(), "server_display_name", strings.TrimSpace(req.ServerName)); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -1242,6 +1242,42 @@ func (s *Store) SetSetting(ctx context.Context, key string, value string) error 
 	return err
 }
 
+// SetSettingString stores a plain-string setting. The value_json column is a
+// JSON type, so the string is JSON-encoded (quoted) to satisfy its json_valid
+// constraint. Use this for scalar settings; SetSetting is for callers that
+// already pass a JSON document (e.g. the NPM config blob).
+func (s *Store) SetSettingString(ctx context.Context, key, value string) error {
+	b, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return s.SetSetting(ctx, key, string(b))
+}
+
+// GetSettingString returns a string setting stored via SetSettingString. It
+// tolerates a legacy raw (non-JSON) value by returning it as-is. The bool is
+// false when the key is absent.
+func (s *Store) GetSettingString(ctx context.Context, key string) (string, bool) {
+	raw, err := s.GetSetting(ctx, key)
+	if err != nil {
+		return "", false
+	}
+	var v string
+	if json.Unmarshal([]byte(raw), &v) != nil {
+		return raw, true
+	}
+	return v, true
+}
+
+// SettingStringOr returns the DB-stored string setting, falling back to the
+// provided value (typically from the environment) when unset.
+func (s *Store) SettingStringOr(ctx context.Context, key, fallback string) string {
+	if v, ok := s.GetSettingString(ctx, key); ok && strings.TrimSpace(v) != "" {
+		return v
+	}
+	return fallback
+}
+
 // GetSetting returns the JSON value stored under key, or ErrNotFound if absent.
 func (s *Store) GetSetting(ctx context.Context, key string) (string, error) {
 	var value string
