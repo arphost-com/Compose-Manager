@@ -447,6 +447,40 @@ export default function Documentation() {
         </p>
       </section>
 
+      <section className="section-panel space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-950">Platform Features</h2>
+          <p className="mt-1 text-sm text-gray-600">How to reach the cross-server, proxy, and firewall features from the dashboard.</p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-md border border-gray-200 p-3">
+            <div className="text-sm font-semibold text-gray-950">Manage multiple servers</div>
+            <p className="mt-1 text-sm leading-6 text-gray-600">
+              The <span className="font-medium">Server</span> selector on the dashboard shows <span className="font-medium">All Servers</span> — the local controller plus every connected server. Add servers in <Link to="/settings" className="text-blue-700 underline">Settings &gt; Agents</Link>:
+              <span className="font-medium"> agents</span> (a lightweight runtime you install on the other host and register with a token) or a <span className="font-medium">peer controller</span> (another full Stack Manager you add by its URL + API key). Register each side as a peer of the other so both dashboards see both hosts.
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 p-3">
+            <div className="text-sm font-semibold text-gray-950">Reverse proxy (Nginx Proxy Manager)</div>
+            <p className="mt-1 text-sm leading-6 text-gray-600">
+              In <Link to="/settings" className="text-blue-700 underline">Settings &gt; Reverse Proxy</Link>, click <span className="font-medium">Deploy Nginx Proxy Manager</span> to stand up NPM in one click, then Connect. Add proxied domains from the form, one-click <span className="font-medium">Proxy the Stack Manager UI</span>, or use the per-project <span className="font-medium">Add to Proxy (NPM)</span> button on any project. Let&rsquo;s Encrypt stays separate under <Link to="/settings" className="text-blue-700 underline">Settings &gt; SSL</Link> for installs that don&rsquo;t use the proxy.
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 p-3">
+            <div className="text-sm font-semibold text-gray-950">Open project ports in the firewall</div>
+            <p className="mt-1 text-sm leading-6 text-gray-600">
+              On any project, <span className="font-medium">Open Ports (CSF)</span> adds the project&rsquo;s published TCP ports inbound to the host ConfigServer firewall (TCP_IN) and reloads it. Requires CSF and the Stack Manager firewall helper installed on that host.
+            </p>
+          </div>
+          <div className="rounded-md border border-gray-200 p-3">
+            <div className="text-sm font-semibold text-gray-950">Templates boot with editable defaults</div>
+            <p className="mt-1 text-sm leading-6 text-gray-600">
+              Catalog templates that need a config file now ship a working starter config embedded in the compose, so they run out of the box. Edit it any time from a project&rsquo;s <span className="font-medium">Config</span> tab. Voice, agent, and AI stacks are pre-wired end to end.
+            </p>
+          </div>
+        </div>
+      </section>
+
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="Documentation sections">
         <button
           type="button"

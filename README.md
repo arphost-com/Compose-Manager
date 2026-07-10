@@ -10,12 +10,12 @@ Manage all your Docker Compose stacks from one dashboard. Discover, deploy, upda
 
 - **200+ one-click stack templates** — AI, databases, CMS, monitoring, proxies, dev tools, media, and more. Pick a template, review the compose and env, and spin it up.
 - **In-browser config editor** — edit compose.yml, .env, Caddyfile, and other project files directly from the dashboard with automatic .bak backups.
-- **Fleet management with agents** — register remote Docker hosts as outbound (phone-home), inbound, or combined agents. Schedule actions across all of them from one controller.
+- **Fleet management with agents & peers** — register remote Docker hosts as outbound (phone-home), inbound, or combined agents, or add another full install as a **peer controller**. The "All Servers" view shows every connected host; schedule and act across all of them from one controller.
 - **Scheduled updates** — daily at 03:00, weekly on Saturday, monthly on the 15th, or every N minutes. Per-project update policies prevent accidental breakage.
 - **Backup to anywhere** — local paths, CIFS, NFS, FTP, SFTP (with in-browser SSH key generation), and S3. Automatic local archive + remote copy.
 - **Live in-browser shell** — xterm.js terminal with real PTY support that opens an interactive session inside any running container via WebSocket + docker exec. Tab completion, arrow keys, colors, and resize — as fast as SSH.
 - **Firewall management** — install, configure, and monitor ConfigServer Firewall (csf/lfd) from the dashboard with structured port forms, testing-mode toggle, allow/deny lists, config editor, and live log viewer. Login IPs are auto-allowlisted. Docker compatibility is auto-configured.
-- **Reverse proxy integration** — connect to a running Nginx Proxy Manager instance from Settings to list, create, and delete proxy hosts. Running projects with exposed ports auto-populate the form.
+- **Reverse proxy integration** — one-click **deploy** Nginx Proxy Manager, then add proxied domains from the dashboard: per-project **Add to Proxy**, a one-click **proxy the Stack Manager UI** target, and auto-filled forwards for running projects. Let's Encrypt stays separate for non-proxy installs.
 - **Two-factor authentication** — TOTP (Google Authenticator / Authy) with QR enrollment, backup codes, and per-user enable/disable.
 - **Self-signed TLS out of the box** — HTTPS on first boot with zero config. Optional Let's Encrypt or Nginx Proxy Manager for real domains.
 - **General settings in the browser** — change ports, cache TTLs, host URL, and roll the API key from Settings > General without touching .env or SSH.
@@ -80,7 +80,7 @@ Browse and deploy from a curated catalog organized into 14 categories and 10 AI 
 
 | Category | Examples |
 |----------|----------|
-| **AI** | Ollama + Open WebUI, LibreChat, AnythingLLM, ComfyUI, Whisper, Langfuse, promptfoo |
+| **AI** | Ollama + Open WebUI, OpenBrain agent stacks (workflow / memory / visual builder), Voice Assistant (Ollama + Open WebUI + Kokoro TTS, voice pre-wired), LibreChat, AnythingLLM, ComfyUI, Whisper, Langfuse |
 | **Web & Proxy** | Nginx, Caddy, Traefik, Nginx Proxy Manager, Apache |
 | **CMS** | WordPress, Ghost, Strapi, Directus, Payload, Concrete CMS |
 | **Database** | PostgreSQL, MariaDB, Redis, MongoDB, CockroachDB, ClickHouse |
@@ -95,7 +95,7 @@ Browse and deploy from a curated catalog organized into 14 categories and 10 AI 
 | **Queue** | RabbitMQ, Apache ActiveMQ, Beanstalkd, Faktory |
 | **Automation** | n8n, Huginn, Cronicle, Changedetection.io |
 
-Templates load into an editable Create Project form — review ports, volumes, passwords, and env vars before deploying. Nothing deploys until you click Create.
+Templates load into an editable Create Project form — review ports, volumes, passwords, and env vars before deploying. Nothing deploys until you click Create. Templates that need a config file ship a working starter config embedded in the compose (via `configs:`), so they boot out of the box and you can edit the config any time from a project's Config tab.
 
 ### In-Browser Config Editor
 
@@ -128,17 +128,18 @@ Create backups from the project detail page or on a schedule. Archives are creat
 
 SFTP endpoints support in-browser Ed25519 key generation: click **Generate**, save the endpoint, copy the displayed public key into the remote server's `authorized_keys`. No host filesystem access needed.
 
-### Fleet Agents
+### Fleet Agents & Peer Controllers
 
-Manage Docker hosts across your network from one controller. Three modes cover every network topology:
+Manage Docker hosts across your network from one controller. The dashboard's **Server** selector shows **All Servers** — the local host plus every connected server — and you can filter to any single one. Add servers in Settings > Agents:
 
-| Mode | How it works | Needs inbound port? |
-|------|-------------|---------------------|
-| **Outbound check-in** | Agent phones home to the controller. Best behind NAT. | No |
-| **Inbound listener** | Controller reaches out to the agent. | Yes |
-| **Both** | Combined — works whether the host is reachable or not. | Yes |
+| Mode | How it works | Needs inbound port? | Has its own UI? |
+|------|-------------|---------------------|-----------------|
+| **Outbound check-in** (agent) | Agent phones home to the controller. Best behind NAT. | No | No |
+| **Inbound listener** (agent) | Controller reaches out to the agent. | Yes | No |
+| **Both** (agent) | Combined — works whether the host is reachable or not. | Yes | No |
+| **Peer controller** | Another full Stack Manager. You add it by its URL + API key; the controller live-fetches its projects into the "All Servers" view. | Reachable over HTTPS | Yes |
 
-The Settings > Agents page shows setup commands with Copy buttons, a controller URL field, and a mode selector that updates the sample commands live. Agents need no database, Redis, or web UI.
+Agents are a lightweight runtime (no database, Redis, or UI) installed with `./scripts/prepare-state.sh --agent --mode <callback\|inbound\|both>` — which auto-generates the `.env` (including `AGENT_TOKEN`) and prints the values to register. **Peer controllers** are two full installs that each add the other as a peer, so both dashboards see and (via the agent proxy) act on both hosts over direct HTTPS. The Settings > Agents page has setup commands with Copy buttons, a controller URL field, and a mode selector that updates the samples live.
 
 ### Interactive Shell
 
@@ -167,6 +168,9 @@ Settings > Firewall provides full management of ConfigServer Firewall on the hos
 - Allow list and deny list tables with per-entry Remove buttons
 - Auto-allowlist on login — every successful dashboard login runs `csf -a` for the caller's IP
 
+**Per-project port opening:**
+- Any project has an **Open Ports (CSF)** button that adds the project's published TCP ports inbound to the host firewall (`TCP_IN`) and reloads CSF, backing up `csf.conf` first. Requires the firewall helper (`stack-manager-csf`) installed on that host.
+
 **Config editor:**
 - In-browser editor for `csf.conf`, `csf.allow`, `csf.deny`, `csf.ignore`, `csf.pignore`
 - Every save creates a timestamped backup under `/var/backups/stack-manager-csf/`
@@ -189,13 +193,14 @@ If the helper is not installed, the Firewall panel shows an amber install-comman
 
 ### Reverse Proxy (Nginx Proxy Manager)
 
-Settings > Reverse Proxy connects to a running NPM instance and manages proxy hosts from the dashboard:
+Settings > Reverse Proxy deploys and manages Nginx Proxy Manager from the dashboard:
 
-- **Connect** with the NPM admin URL, email, and password
-- **List proxy hosts** with domain, forward target, SSL status
-- **Create proxy hosts** — running projects with exposed ports appear as clickable chips that auto-fill the form
-- **Delete proxy hosts** directly from the table
-- Only needed when you have real domain names — private networks and IP-only hosts should use the built-in self-signed cert
+- **Deploy Nginx Proxy Manager** — one click stands up NPM from the built-in template and prefills the connection form with its admin URL and default login
+- **Connect** with the NPM admin URL, email, and password (the auth request sends only `identity` + `secret`, which NPM's schema requires)
+- **Add proxied domains** from a form — running projects appear as chips that auto-fill the forward target, plus a one-click **Stack Manager UI** target to proxy the dashboard itself
+- **Add to Proxy (NPM)** on any project — one click creates a proxy host forwarding to the host + the project's first published port (domain and SSL editable in NPM after)
+- **List / delete proxy hosts** from the table
+- Let's Encrypt stays separate under Settings > SSL for installs that don't use the proxy; private networks and IP-only hosts can keep the built-in self-signed cert
 
 ### Two-Factor Authentication
 
@@ -276,6 +281,8 @@ Each project has a dedicated page with tabs:
 | Databases | Health checks and SQL dumps for supported engines |
 | Inspect | Raw `docker inspect` JSON |
 | Processes | `docker top` output |
+
+The action bar also has per-project one-click buttons: **Update / Pull / Start / Restart / Stop**, **Backup**, **DB Dump**, **Open Ports (CSF)** (opens the project's published ports in the host firewall), and **Add to Proxy (NPM)** (creates an Nginx Proxy Manager host for the project). Backups warn before restore/delete, and stopping is styled as a destructive action.
 
 ---
 
@@ -369,10 +376,15 @@ See [Agent Modes](docs/AGENT_MODES.md) for the full protocol reference, or use t
 ```bash
 git clone https://github.com/arphost-com/Stack-Manager.git stack-manager
 cd stack-manager
-./scripts/prepare-state.sh --agent .env
-# Edit .env: set DOCKER_ROOT and AGENT_CONTROLLER_URL
+# --mode is callback (outbound), inbound, or both. This writes the correct
+# APP_MODE and auto-generates AGENT_TOKEN, AGENT_NAME, AGENT_PORT into .env,
+# then prints the values to register in Settings > Agents.
+./scripts/prepare-state.sh --agent --mode callback .env
+# Edit .env: set DOCKER_ROOT and AGENT_CONTROLLER_URL to your controller's URL
 docker compose --env-file .env -f docker-compose.agent.yml up -d --build
 ```
+
+Then register the agent from the controller: **Settings > Agents > Add Agent** (name, mode, and the printed `AGENT_TOKEN`). For a **peer controller** instead, run a full install on both hosts and add each as a peer of the other (URL + API key) under Settings > Agents.
 
 ---
 
