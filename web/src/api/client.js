@@ -300,6 +300,8 @@ export function systemForSource(agentId) {
 export const system = {
   gpu: () => request('/system/gpu'),
   gpuTest: () => request('/system/gpu/test', { method: 'POST' }),
+  info: () => request('/system/info'),
+  setName: (name) => request('/system/info', { method: 'PUT', body: JSON.stringify({ server_name: name }) }),
   prune: (mode = 'safe') => request('/prune', { method: 'POST', body: JSON.stringify({ mode }) }),
 };
 

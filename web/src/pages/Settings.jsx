@@ -90,6 +90,9 @@ export default function Settings() {
   const [gpuInfo, setGpuInfo] = useState(null);
   const [gpuTest, setGpuTest] = useState(null);
   const [gpuTesting, setGpuTesting] = useState(false);
+  const [serverNameInput, setServerNameInput] = useState(null);
+  const [serverNameSaved, setServerNameSaved] = useState(false);
+  const [savingServerName, setSavingServerName] = useState(false);
   const [userList, setUserList] = useState([]);
   const [destinationList, setDestinationList] = useState([]);
   const [projectList, setProjectList] = useState([]);
@@ -213,6 +216,24 @@ export default function Settings() {
       system.gpu().then(r => setGpuInfo(r.data)).catch(() => setGpuInfo({ available: false }));
     }
   }, [admin, activeTab]);
+
+  useEffect(() => {
+    if (admin && activeTab === 'general' && serverNameInput === null) {
+      system.info().then(r => setServerNameInput(r.data?.server_name || '')).catch(() => setServerNameInput(''));
+    }
+  }, [admin, activeTab]);
+
+  const saveServerName = async () => {
+    setSavingServerName(true);
+    setServerNameSaved(false);
+    try {
+      const r = await system.setName(serverNameInput || '');
+      setServerNameInput(r.data?.server_name || '');
+      setServerNameSaved(true);
+    } catch { /* leave field as-is */ } finally {
+      setSavingServerName(false);
+    }
+  };
 
   const runGpuTest = async () => {
     setGpuTesting(true);
@@ -1149,6 +1170,20 @@ export default function Settings() {
 
       {admin && activeTab === 'general' && generalSettings && (
         <div className="space-y-4">
+          <div className="section-panel space-y-3">
+            <h2 className="text-lg font-semibold text-gray-950">Server name</h2>
+            <p className="text-sm text-gray-600">A friendly name for this server, shown in the dashboard&rsquo;s server selector instead of the IP. Leave blank to use the OS hostname.</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label="Display name" title="Shown as 'This Server' in the dashboard server dropdown." hint="Blank = OS hostname">
+                <input className="input" value={serverNameInput || ''} onChange={e => { setServerNameInput(e.target.value); setServerNameSaved(false); }} placeholder={serverNameInput === null ? 'loading…' : 'e.g. ai01'} />
+              </Field>
+              <button onClick={saveServerName} disabled={savingServerName || serverNameInput === null} className="btn-primary inline-flex items-center gap-2">
+                {savingServerName && <span className="spinner" aria-hidden="true"></span>}
+                Save name
+              </button>
+              {serverNameSaved && <span className="pb-2 text-sm text-green-700">Saved — reload the dashboard to see it.</span>}
+            </div>
+          </div>
           <div className="section-panel space-y-3">
             <h2 className="text-lg font-semibold text-gray-950">Ports</h2>
             <p className="text-sm text-gray-600">Change the host ports Stack Manager listens on. Port changes require a full <code className="rounded bg-gray-100 px-1">docker compose --env-file .env up -d</code> restart — the browser URL will change.</p>

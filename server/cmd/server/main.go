@@ -98,6 +98,7 @@ func main() {
 	projectHandler.SetUpdateCheckManager(updateChecker)
 	projectHandler.PortSyncer = firewallSkill
 	agentHandler := handlers.NewAgentHandler(appStore)
+	systemInfoHandler := handlers.NewSystemInfoHandler(appStore)
 	agentCheckinHandler := handlers.NewAgentCheckinHandler(appStore)
 	scheduleHandler := handlers.NewScheduleHandler(appStore, scheduler)
 	metricsHandler := handlers.NewMetricsHandler(appStore, metricsCollector)
@@ -253,6 +254,8 @@ func main() {
 			// System info
 			r.Get("/system/gpu", handlers.GPUDetect)
 			r.Post("/system/gpu/test", handlers.GPUTest)
+			r.Get("/system/info", systemInfoHandler.Get)
+			r.Put("/system/info", systemInfoHandler.Save)
 
 			// Agent proxy — forward actions to inbound agents
 			r.HandleFunc("/agent-proxy/{agentId}/*", agentProxyHandler.Proxy)

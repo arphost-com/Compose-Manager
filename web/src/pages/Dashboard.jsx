@@ -95,7 +95,7 @@ function ServerIcon({ kind, className = 'h-4 w-4' }) {
 // control + popover so the active scope (controller vs a named agent) is
 // obvious at a glance. projects is already scoped to the current selection,
 // so the count reflects the active server only.
-function ServerSelector({ value, onChange, agents = [], projects = [] }) {
+function ServerSelector({ value, onChange, agents = [], projects = [], selfName }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
 
@@ -108,10 +108,10 @@ function ServerSelector({ value, onChange, agents = [], projects = [] }) {
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
   }, [open]);
 
-  const selfName = (typeof window !== 'undefined' && window.location?.hostname) || 'localhost';
+  const localLabel = selfName || (typeof window !== 'undefined' && window.location?.hostname) || 'localhost';
   const options = [
     { key: 'all', kind: 'all', label: 'All Servers', sub: 'Controller and every agent' },
-    { key: 'local', kind: 'local', label: selfName, self: true, sub: 'Local controller host' },
+    { key: 'local', kind: 'local', label: localLabel, self: true, sub: 'Local controller host' },
     ...agents.map(a => ({
       key: a.name,
       kind: 'agent',
@@ -217,6 +217,7 @@ export default function Dashboard() {
   const [serverSource, setServerSource] = useState(() => {
     try { return localStorage.getItem('cm_server_source') || 'all'; } catch { return 'all'; }
   });
+  const [serverName, setServerName] = useState('');
   const [loading, setLoading] = useState(!initialSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -367,6 +368,10 @@ export default function Dashboard() {
       fetchData();
     }
   }, [filters.includeInactive, filters.runningOnly, serverSource]);
+
+  useEffect(() => {
+    system.info().then(r => setServerName(r.data?.server_name || '')).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!showPruneMenu) return undefined;
@@ -796,6 +801,7 @@ export default function Dashboard() {
               onChange={(v) => { setServerSource(v); try { localStorage.setItem('cm_server_source', v); } catch {} }}
               agents={agentList}
               projects={projectList}
+              selfName={serverName}
             />
           </div>
         </div>
