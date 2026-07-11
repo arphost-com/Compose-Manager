@@ -2088,6 +2088,12 @@ export default function Settings() {
                 <p className="mt-1">Install the helper on the host once (over SSH), then this panel activates:</p>
                 <pre className="mt-2 overflow-auto rounded bg-gray-950 p-2 text-xs text-gray-100">{updateInfo.helper_hint || 'sudo install -m 750 scripts/stack-manager-update.sh /usr/local/sbin/stack-manager-update'}</pre>
               </div>
+            ) : updateInfo && updateInfo.vcs === 'none' ? (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                <div className="font-medium">This host isn&rsquo;t a git checkout</div>
+                <p className="mt-1">{updateInfo.note || 'The deploy tree here was created by CI/rsync, not git, so in-place self-update isn’t available. Update this host through its pipeline / deploy process.'}</p>
+                {updateInfo.dir && <div className="mt-2 font-mono text-xs text-blue-700">dir={updateInfo.dir}</div>}
+              </div>
             ) : (
               <>
                 {updateInfo?.error && <div className="text-sm text-red-700">{updateInfo.error}</div>}

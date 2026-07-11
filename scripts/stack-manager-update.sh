@@ -28,9 +28,16 @@ find_dir() {
 cmd_status() {
   local dir; dir=$(find_dir) || { echo 'error=cannot locate stack-manager deploy dir'; return 0; }
   [ -n "$dir" ] && cd "$dir" 2>/dev/null || { echo "error=deploy dir not found: $dir"; return 0; }
-  git config --global --add safe.directory "$dir" 2>/dev/null || true
-  git fetch --quiet origin 2>/dev/null || true
   echo "dir=$dir"
+  git config --global --add safe.directory "$dir" 2>/dev/null || true
+  # A CI/rsync-deployed host has no .git, so self-update (fetch + reset) can't
+  # work — report that clearly instead of blank branch/local fields.
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    echo "vcs=none"
+    echo "note=This deploy tree is not a git checkout (deployed by CI/rsync). Update it through your pipeline, not this button."
+    return 0
+  fi
+  git fetch --quiet origin 2>/dev/null || true
   echo "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
   echo "local=$(git rev-parse --short HEAD 2>/dev/null)"
   echo "remote=$(git rev-parse --short '@{u}' 2>/dev/null || echo unknown)"
@@ -43,6 +50,11 @@ cmd_status() {
 cmd_update() {
   local dir; dir=$(find_dir) || { echo 'error=cannot locate stack-manager deploy dir'; return 1; }
   [ -n "$dir" ] || { echo 'error=empty deploy dir'; return 1; }
+  # Refuse on a non-git (CI/rsync) tree instead of failing mid-rebuild.
+  if ! git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+    echo 'error=this deploy tree is not a git checkout (deployed by CI/rsync); update it through your pipeline, not this button'
+    return 1
+  fi
   local logf=/var/log/stack-manager-update.log
 
   # The rebuild takes minutes and RESTARTS the server/web containers, so it must

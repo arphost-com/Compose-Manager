@@ -1394,25 +1394,172 @@ volumes:
 			Notes:      "Same style as Sonarr; run both plus qBittorrent/SABnzbd together.",
 		},
 		{
-			ID: "overseerr", Name: "Overseerr", Description: "Request management for Plex / Jellyfin users.",
+			ID: "jackett", Name: "Jackett", Description: "Indexer proxy giving Sonarr/Radarr access to torrent and Usenet trackers.",
 			Category: "media",
-			Source:   "docker-hub", Image: "sctx/overseerr:latest",
-			Tags: []string{"media", "requests"},
+			Source:   "linuxserver", Image: "lscr.io/linuxserver/jackett:latest",
+			Tags: []string{"media", "indexer", "arr"},
 			ComposeContent: `services:
-  overseerr:
-    image: sctx/overseerr:latest
+  jackett:
+    image: lscr.io/linuxserver/jackett:latest
     environment:
-      TZ: ${TZ:-UTC}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Etc/UTC}
     ports:
-      - "${OVERSEERR_PORT:-5055}:5055"
+      - "${JACKETT_PORT:-9117}:9117"
     volumes:
-      - overseerr-config:/app/config
+      - jackett-config:/config
     restart: unless-stopped
 volumes:
-  overseerr-config:
+  jackett-config:
 `,
-			EnvContent: "TZ=UTC\nOVERSEERR_PORT=5055\n",
-			Notes:      "Setup wizard connects to Plex/Jellyfin and Sonarr/Radarr on first launch.",
+			EnvContent: "PUID=1000\nPGID=1000\nTZ=Etc/UTC\nJACKETT_PORT=9117\n",
+			Notes:      "Prowlarr is the more modern option, but Jackett is still widely used. Add trackers in the UI, then feed the Torznab URLs to Sonarr/Radarr.",
+		},
+		{
+			ID: "flaresolverr", Name: "FlareSolverr", Description: "Proxy that solves Cloudflare / DDoS-Guard challenges for indexers.",
+			Category: "media",
+			Source:   "docker-hub", Image: "ghcr.io/flaresolverr/flaresolverr:latest",
+			Tags: []string{"media", "indexer", "cloudflare"},
+			ComposeContent: `services:
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    environment:
+      - LOG_LEVEL=info
+      - TZ=${TZ:-Etc/UTC}
+    ports:
+      - "${FLARESOLVERR_PORT:-8191}:8191"
+    restart: unless-stopped
+`,
+			EnvContent: "TZ=Etc/UTC\nFLARESOLVERR_PORT=8191\n",
+			Notes:      "Add as a proxy in Prowlarr/Jackett (http://<host>:8191) so Cloudflare-protected indexers work. No persistent data.",
+		},
+		{
+			ID: "deluge", Name: "Deluge", Description: "Lightweight BitTorrent client with a web UI.",
+			Category: "media",
+			Source:   "linuxserver", Image: "lscr.io/linuxserver/deluge:latest",
+			Tags: []string{"media", "download", "torrent"},
+			ComposeContent: `services:
+  deluge:
+    image: lscr.io/linuxserver/deluge:latest
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Etc/UTC}
+    ports:
+      - "${DELUGE_PORT:-8112}:8112"
+      - "6881:6881"
+      - "6881:6881/udp"
+    volumes:
+      - deluge-config:/config
+      - ${DOWNLOADS_DIR:-./downloads}:/downloads
+    restart: unless-stopped
+volumes:
+  deluge-config:
+`,
+			EnvContent: "PUID=1000\nPGID=1000\nTZ=Etc/UTC\nDELUGE_PORT=8112\nDOWNLOADS_DIR=./downloads\n",
+			Notes:      "Default web UI password is 'deluge' — change it on first login. Add it as a download client in Sonarr/Radarr.",
+		},
+		{
+			ID: "ombi", Name: "Ombi", Description: "Request platform for Plex/Emby/Jellyfin users (movies, TV, and music).",
+			Category: "media",
+			Source:   "linuxserver", Image: "lscr.io/linuxserver/ombi:latest",
+			Tags: []string{"media", "requests"},
+			ComposeContent: `services:
+  ombi:
+    image: lscr.io/linuxserver/ombi:latest
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Etc/UTC}
+    ports:
+      - "${OMBI_PORT:-3579}:3579"
+    volumes:
+      - ombi-config:/config
+    restart: unless-stopped
+volumes:
+  ombi-config:
+`,
+			EnvContent: "PUID=1000\nPGID=1000\nTZ=Etc/UTC\nOMBI_PORT=3579\n",
+			Notes:      "An alternative to Jellyseerr with music-request support. Connect your media server and *arr apps in Settings.",
+		},
+		{
+			ID: "komga", Name: "Komga", Description: "Comics, manga, and digital-book server with a web reader and OPDS.",
+			Category: "media",
+			Source:   "docker-hub", Image: "gotson/komga:latest",
+			Tags: []string{"media", "comics", "manga", "books"},
+			ComposeContent: `services:
+  komga:
+    image: gotson/komga:latest
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+    ports:
+      - "${KOMGA_PORT:-25600}:25600"
+    volumes:
+      - komga-config:/config
+      - ${COMICS_DIR:-./comics}:/data
+    restart: unless-stopped
+volumes:
+  komga-config:
+`,
+			EnvContent: "TZ=Etc/UTC\nKOMGA_PORT=25600\nCOMICS_DIR=./comics\n",
+			Notes:      "Point /data at your comics/manga library, create an admin on first launch, then read in-browser or via any OPDS app.",
+		},
+		{
+			ID: "kavita", Name: "Kavita", Description: "Fast self-hosted library for comics, manga, and ebooks with a web reader.",
+			Category: "media",
+			Source:   "docker-hub", Image: "jvmilazz0/kavita:latest",
+			Tags: []string{"media", "books", "comics", "manga", "ebooks"},
+			ComposeContent: `services:
+  kavita:
+    image: jvmilazz0/kavita:latest
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+    ports:
+      - "${KAVITA_PORT:-5000}:5000"
+    volumes:
+      - kavita-config:/kavita/config
+      - ${BOOKS_DIR:-./books}:/data
+    restart: unless-stopped
+volumes:
+  kavita-config:
+`,
+			EnvContent: "TZ=Etc/UTC\nKAVITA_PORT=5000\nBOOKS_DIR=./books\n",
+			Notes:      "Add your ebook/comic folders as libraries after the first-run setup wizard.",
+		},
+		{
+			ID: "tdarr", Name: "Tdarr", Description: "Distributed media transcoding and health-checking (audio/video) with a web UI.",
+			Category: "media",
+			Source:   "docker-hub", Image: "ghcr.io/haveagitgat/tdarr:latest",
+			Tags: []string{"media", "transcode", "ffmpeg"},
+			ComposeContent: `services:
+  tdarr:
+    image: ghcr.io/haveagitgat/tdarr:latest
+    environment:
+      - TZ=${TZ:-Etc/UTC}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - internalNode=true
+      - serverIP=0.0.0.0
+      - serverPort=8266
+      - webUIPort=8265
+    ports:
+      - "${TDARR_WEBUI_PORT:-8265}:8265"
+      - "${TDARR_SERVER_PORT:-8266}:8266"
+    volumes:
+      - tdarr-server:/app/server
+      - tdarr-configs:/app/configs
+      - tdarr-logs:/app/logs
+      - ${MEDIA_DIR:-./media}:/media
+      - ${TRANSCODE_DIR:-./transcode}:/temp
+    restart: unless-stopped
+volumes:
+  tdarr-server:
+  tdarr-configs:
+  tdarr-logs:
+`,
+			EnvContent: "TZ=Etc/UTC\nPUID=1000\nPGID=1000\nTDARR_WEBUI_PORT=8265\nTDARR_SERVER_PORT=8266\nMEDIA_DIR=./media\nTRANSCODE_DIR=./transcode\n",
+			Notes:      "For GPU transcoding, add GPU passthrough (Settings > GPU or the per-project Enable GPU). Point /media at your library.",
 		},
 
 		// ---- Non-AI: monitoring +3 ----

@@ -2962,30 +2962,29 @@ volumes:
 			Notes:      "Web UI available at the configured port. No default password unless USER and PASS env vars are set.",
 		},
 		{
-			ID:          "overseerr",
-			Name:        "Overseerr",
-			Description: "Media request and discovery management for Plex.",
+			ID:          "jellyseerr",
+			Name:        "Jellyseerr",
+			Description: "Media request and discovery for Jellyfin, Plex, and Emby (the maintained Overseerr fork).",
 			Category:    "media",
-			Source:      "linuxserver",
-			Image:       "lscr.io/linuxserver/overseerr:latest",
-			Tags:        []string{"media", "requests", "plex"},
+			Source:      "docker-hub",
+			Image:       "fallenbagel/jellyseerr:latest",
+			Tags:        []string{"media", "requests", "jellyfin", "plex", "emby"},
 			ComposeContent: `services:
-  overseerr:
-    image: lscr.io/linuxserver/overseerr:latest
+  jellyseerr:
+    image: fallenbagel/jellyseerr:latest
     restart: unless-stopped
     ports:
-      - "${OVERSEERR_PORT:-5055}:5055"
+      - "${JELLYSEERR_PORT:-5055}:5055"
     environment:
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
+      - LOG_LEVEL=info
       - TZ=${TZ:-Etc/UTC}
     volumes:
-      - overseerr-config:/config
+      - jellyseerr-config:/app/config
 volumes:
-  overseerr-config:
+  jellyseerr-config:
 `,
-			EnvContent: "OVERSEERR_PORT=5055\nPUID=1000\nPGID=1000\nTZ=Etc/UTC\n",
-			Notes:      "Connect to your Plex server during initial setup. Users can request movies and TV shows through the web UI.",
+			EnvContent: "JELLYSEERR_PORT=5055\nTZ=Etc/UTC\n",
+			Notes:      "Connect your Jellyfin/Plex/Emby server during initial setup, then users request movies and TV shows through the web UI. Jellyseerr is the actively-maintained fork of the discontinued Overseerr.",
 		},
 		{
 			ID:          "tautulli",
