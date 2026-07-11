@@ -128,15 +128,20 @@ func (h *DockerSettingsHandler) SaveDaemon(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *DockerSettingsHandler) readDaemonJSON() (string, bool, error) {
-	output, err := h.runDocker("run", "--rm", "-v", h.hostDaemonDir()+":/host/etc/docker:ro", h.helperImage(), "cat", "/host/etc/docker/daemon.json")
+	// Capture stdout and stderr separately: the container's stdout is the file
+	// content (from `cat`), while Docker's own "Unable to find image … locally"
+	// pull progress goes to stderr. Folding them together (CombinedOutput) on the
+	// first, uncached use of the helper image prepends that pull chatter to the
+	// bytes and breaks JSON parsing ("invalid character 'U'").
+	stdout, stderr, err := h.runDockerSplit("run", "--rm", "-v", h.hostDaemonDir()+":/host/etc/docker:ro", h.helperImage(), "cat", "/host/etc/docker/daemon.json")
 	if err != nil {
-		text := strings.TrimSpace(string(output))
+		text := strings.TrimSpace(string(stderr))
 		if strings.Contains(text, "No such file") || strings.Contains(text, "can't open") {
 			return "", false, nil
 		}
 		return "", false, fmt.Errorf("read daemon.json failed: %v - %s", err, text)
 	}
-	return string(output), true, nil
+	return string(stdout), true, nil
 }
 
 func (h *DockerSettingsHandler) writeDaemonJSON(raw string) error {
@@ -173,6 +178,22 @@ func (h *DockerSettingsHandler) runDocker(args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("DOCKER_DAEMON_DIR must be an absolute host path")
 	}
 	return exec.Command("docker", args...).CombinedOutput()
+}
+
+// runDockerSplit is like runDocker but returns stdout and stderr separately so
+// callers that parse stdout (e.g. reading a file via `cat`) are not polluted by
+// Docker's pull progress, which is written to stderr.
+func (h *DockerSettingsHandler) runDockerSplit(args ...string) ([]byte, []byte, error) {
+	dir := h.hostDaemonDir()
+	if !strings.HasPrefix(dir, "/") || strings.ContainsAny(dir, "\r\n") {
+		return nil, nil, fmt.Errorf("DOCKER_DAEMON_DIR must be an absolute host path")
+	}
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("docker", args...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stdout.Bytes(), stderr.Bytes(), err
 }
 
 // RestartDocker restarts the Docker daemon on the host. Uses a
