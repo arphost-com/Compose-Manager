@@ -64,6 +64,12 @@ cmd_update() {
     echo \"=== \$(date -u) self-update starting ===\"
     $git fetch origin || { echo 'ERROR: git fetch failed'; exit 1; }
     $git reset --hard '@{u}' || { echo 'ERROR: git reset failed'; exit 1; }
+    # This unit runs as root, so git just wrote root-owned objects/files. Re-own
+    # the tree to the deploy user (skipping the state dir, whose mariadb/redis
+    # files are service-owned) so a later non-root deploy.sh doesn't break on
+    # 'Operation not permitted'. No-op when the tree is already root-owned.
+    ownerid=\$(stat -c '%U:%G' '$dir' 2>/dev/null || true)
+    [ -n \"\$ownerid\" ] && [ \"\$ownerid\" != 'root:root' ] && find '$dir' -name .stack-manager -prune -o -user root -exec chown \"\$ownerid\" {} + 2>/dev/null || true
     export VITE_GIT_SHA=\$($git rev-parse --short HEAD)
     echo \"rebuilding at \$VITE_GIT_SHA\"
     docker compose --env-file .env up -d --build --remove-orphans || { echo 'ERROR: compose up failed'; exit 1; }
