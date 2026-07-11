@@ -17,6 +17,15 @@ services:
         # SSL dir is 2775 so both the web container (nginx entrypoint) and
         # certbot helper containers can drop cert/webroot files.
         chmod 2775 /state/ssl /state/ssl/acme-webroot
+        # Install the host helper scripts (GPU / OS updates / self-update /
+        # firewall / timezone) so those Settings panels activate automatically
+        # the first time the stack comes up — no manual 'sudo install' step on
+        # any node. /host-sbin is the host's /usr/local/sbin. Best-effort.
+        if [ -d /host-sbin ]; then
+          for h in gpu os update csf tz; do
+            [ -f "/scripts/stack-manager-$h.sh" ] && install -m 750 "/scripts/stack-manager-$h.sh" "/host-sbin/stack-manager-$h" 2>/dev/null || true
+          done
+        fi
     volumes:
       - type: bind
         source: ${STATE_DIR:-.stack-manager}
@@ -24,6 +33,15 @@ services:
       - type: bind
         source: ${BACKUP_TARGET_ROOT:-.stack-manager/backup-targets}
         target: /backup-targets
+      # The repo's helper scripts, and the host's /usr/local/sbin to install
+      # them into. read_only on scripts; /host-sbin is writable (root sidecar).
+      - type: bind
+        source: ./scripts
+        target: /scripts
+        read_only: true
+      - type: bind
+        source: /usr/local/sbin
+        target: /host-sbin
         bind:
           create_host_path: true
     restart: "no"
@@ -76,6 +94,10 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # Follow the host system timezone (set via Settings > Timezone /
+      # timedatectl) so logs, audit entries, backup filenames and schedule
+      # times use the host's local time. Applied on the next container restart.
+      - /etc/localtime:/etc/localtime:ro
       # Bind DOCKER_ROOT at the same host path inside the container so
       # `./file.conf` inside a child compose file resolves to a real host
       # file. Any other target path would make the daemon (which reads
@@ -125,6 +147,7 @@ services:
       - "${WEB_HTTP_PORT:-${WEB_PORT:-8193}}:8080"
       - "${WEB_SSL_PORT:-8993}:8443"
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - type: bind
         source: ${STATE_DIR:-.stack-manager}/ssl
         target: /etc/nginx/ssl
@@ -147,6 +170,7 @@ services:
       MARIADB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD required}"
       MARIADB_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD required}"
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - type: bind
         source: ${STATE_DIR:-.stack-manager}/mariadb
         target: /var/lib/mysql
@@ -166,6 +190,7 @@ services:
     image: ${BASE_IMAGE_PREFIX:-}redis:7.4-alpine
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD required}"]
     volumes:
+      - /etc/localtime:/etc/localtime:ro
       - type: bind
         source: ${STATE_DIR:-.stack-manager}/redis
         target: /data

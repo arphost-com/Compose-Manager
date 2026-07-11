@@ -57,6 +57,7 @@ var editableKeys = map[string]struct{}{
 	"HOST_URL":                {},
 	"EXTRA_DOCKER_ROOTS":      {},
 	"TZ":                      {},
+	"DOCKER_DAEMON_DIR":       {},
 }
 
 // dbBackedKeys are runtime settings stored in the DB (app_settings) rather than
@@ -119,7 +120,9 @@ func (h *EnvSettingsHandler) Save(w http.ResponseWriter, r *http.Request) {
 	if !middleware.RequireAdmin(w, r) {
 		return
 	}
-	var body map[string]string
+	// Decode into interface{} values, not string, so non-string fields the form
+	// echoes back (e.g. api_key_set, a bool from GET) don't fail the whole save.
+	var body map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -127,12 +130,25 @@ func (h *EnvSettingsHandler) Save(w http.ResponseWriter, r *http.Request) {
 
 	var warnings []string
 	changed := map[string]string{}
-	for key, value := range body {
+	for key, raw := range body {
 		upper := strings.ToUpper(strings.TrimSpace(key))
 		if _, ok := editableKeys[upper]; !ok {
 			continue
 		}
-		value = strings.TrimSpace(value)
+		// Only accept string-valued editable keys; ignore anything else.
+		s, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		value := strings.TrimSpace(s)
+		// A blanked numeric/port field shouldn't fail the whole save (the form
+		// echoes every field): just skip it so other edits still persist.
+		if value == "" {
+			switch upper {
+			case "WEB_HTTP_PORT", "WEB_SSL_PORT", "CACHE_TTL_SECONDS", "METRICS_REFRESH_MINUTES", "WARM_CACHE_TTL_MINUTES":
+				continue
+			}
+		}
 		if upper == "WEB_HTTP_PORT" || upper == "WEB_SSL_PORT" {
 			if _, err := strconv.Atoi(value); err != nil && value != "0" {
 				writeError(w, http.StatusBadRequest, fmt.Sprintf("%s must be a number", upper))

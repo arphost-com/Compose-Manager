@@ -1176,8 +1176,15 @@ export default function Settings() {
         </div>
       </div>
 
-      {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
-      {message && <div className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">{message}</div>}
+      {(message || error) && (
+        <div className="fixed bottom-4 right-4 z-50 w-full max-w-sm px-4 sm:px-0" role="status" aria-live="polite">
+          <div className={`flex items-start gap-2 rounded-lg border p-3 text-sm shadow-lg ${error ? 'border-red-300 bg-red-50 text-red-800' : 'border-green-300 bg-green-50 text-green-900'}`}>
+            <span className="mt-0.5 shrink-0 font-semibold">{error ? '⚠' : '✓'}</span>
+            <span className="min-w-0 flex-1 break-words">{error || message}</span>
+            <button type="button" onClick={() => { setError(''); setMessage(''); }} className="shrink-0 text-lg leading-none opacity-60 hover:opacity-100" title="Dismiss">×</button>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'account' && (
         <div className="space-y-4">
@@ -1576,6 +1583,7 @@ export default function Settings() {
                 <select value={agentForm.mode} onChange={e => setAgentForm({ ...agentForm, mode: e.target.value })} className="input">
                   <option value="callback">Outbound check-in (agent)</option>
                   <option value="inbound">Inbound URL (agent)</option>
+                  <option value="both">Check-in + inbound URL (agent)</option>
                   <option value="peer">Peer controller (full UI)</option>
                 </select>
               </Field>
