@@ -35,6 +35,9 @@ cmd_status() {
   echo "local=$(git rev-parse --short HEAD 2>/dev/null)"
   echo "remote=$(git rev-parse --short '@{u}' 2>/dev/null || echo unknown)"
   echo "behind=$(git rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
+  # One change=<subject> line per pending commit (newest first), so the update
+  # panel can show what the update contains.
+  git log --format='change=%s' 'HEAD..@{u}' 2>/dev/null | head -50
 }
 
 cmd_update() {

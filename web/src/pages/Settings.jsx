@@ -2091,6 +2091,14 @@ export default function Settings() {
                     {updateInfo.behind !== undefined && <span className={`rounded-md px-2 py-0.5 font-mono ${Number(updateInfo.behind) > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>{Number(updateInfo.behind) > 0 ? `${updateInfo.behind} behind` : 'up to date'}</span>}
                   </div>
                 )}
+                {updateInfo && !updateInfo.error && Number(updateInfo.behind) > 0 && updateInfo.changes?.length > 0 && (
+                  <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3">
+                    <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-yellow-800">What's in this update ({updateInfo.changes.length})</div>
+                    <ul className="list-disc space-y-0.5 pl-5 text-sm text-yellow-900">
+                      {updateInfo.changes.map((c, i) => <li key={i}>{c}</li>)}
+                    </ul>
+                  </div>
+                )}
                 <button onClick={runSelfUpdate} disabled={!!updateBusy} className="btn-primary inline-flex items-center gap-2">{updateBusy === 'update' && <span className="spinner" aria-hidden="true"></span>}Update now</button>
                 <p className="text-xs text-gray-500">Fetches + hard-resets the deploy tree to the tracked upstream, then rebuilds. Uncommitted local changes in the deploy tree are discarded. The dashboard restarts — reconnect in a few minutes.</p>
               </>
@@ -2405,7 +2413,7 @@ export default function Settings() {
                 <div className="flex flex-wrap gap-2">
                   <a href={npmStatus?.url || '#'} target="_blank" rel="noreferrer" className="btn-secondary inline-flex items-center gap-1">Open NPM Admin</a>
                   <a href="https://nginxproxymanager.com/guide/" target="_blank" rel="noreferrer" className="btn-secondary inline-flex items-center gap-1">NPM Official Docs</a>
-                  <Link to="/documentation" className="btn-secondary inline-flex items-center gap-1">Stack Manager Docs</Link>
+                  <Link to="/docs" className="btn-secondary inline-flex items-center gap-1">Stack Manager Docs</Link>
                 </div>
               </div>
             </>

@@ -996,6 +996,13 @@ function ConfigEditor({ projectName, sourceAgentId }) {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [reloadTick, setReloadTick] = useState(0);
+
+  // Unsaved edits are stashed in localStorage per project+file so they survive
+  // this component unmounting (switching tabs, the parent re-rendering, the
+  // window losing focus). They're only cleared on Save or Discard — never lost
+  // just because the editor left the screen.
+  const draftKey = (file) => `cm_cfgdraft:${projectName}:${file}`;
 
   useEffect(() => {
     const load = async () => {
@@ -1017,16 +1024,26 @@ function ConfigEditor({ projectName, sourceAgentId }) {
     const load = async () => {
       try {
         const res = await api.fileContent(projectName, selectedFile);
-        setContent(res.data?.content || '');
-        setDirty(false);
-        setMessage('');
+        const server = res.data?.content || '';
+        let draft = null;
+        try { draft = localStorage.getItem(draftKey(selectedFile)); } catch {}
+        if (draft !== null && draft !== server) {
+          // Prior unsaved edits exist — restore them instead of clobbering.
+          setContent(draft);
+          setDirty(true);
+          setMessage('Restored your unsaved edits. Save to keep them, or Discard to reload the file from disk.');
+        } else {
+          setContent(server);
+          setDirty(false);
+          setMessage('');
+        }
       } catch (err) {
         setContent('');
         setMessage('Failed to load: ' + err.message);
       }
     };
     load();
-  }, [selectedFile, projectName]);
+  }, [selectedFile, projectName, reloadTick]);
 
   const save = async () => {
     setSaving(true);
@@ -1034,11 +1051,18 @@ function ConfigEditor({ projectName, sourceAgentId }) {
     try {
       const res = await api.saveFile(projectName, selectedFile, content);
       setDirty(false);
+      try { localStorage.removeItem(draftKey(selectedFile)); } catch {}
       setMessage(res.data?.hint || 'Saved.');
     } catch (err) {
       setMessage('Error: ' + err.message);
     }
     setSaving(false);
+  };
+
+  const discard = () => {
+    try { localStorage.removeItem(draftKey(selectedFile)); } catch {}
+    setDirty(false);
+    setReloadTick(t => t + 1); // re-run the load effect to pull the on-disk file
   };
 
   return (
@@ -1050,7 +1074,7 @@ function ConfigEditor({ projectName, sourceAgentId }) {
           </select>
         </Field>
         <button className="btn-primary" disabled={!dirty || saving} onClick={save} title="Save the file. A .bak backup is created automatically.">{saving ? 'Saving...' : 'Save'}</button>
-        <button className="btn-secondary" disabled={!dirty} onClick={() => { setSelectedFile(selectedFile); }} title="Reload the file and discard changes.">Discard</button>
+        <button className="btn-secondary" disabled={!dirty} onClick={discard} title="Reload the file from disk and discard your unsaved changes.">Discard</button>
       </div>
       {message && <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">{message}</div>}
       {dirty && <div className="text-xs text-amber-700">Unsaved changes.</div>}
@@ -1059,7 +1083,12 @@ function ConfigEditor({ projectName, sourceAgentId }) {
         rows={24}
         spellCheck={false}
         value={content}
-        onChange={e => { setContent(e.target.value); setDirty(true); }}
+        onChange={e => {
+          const v = e.target.value;
+          setContent(v);
+          setDirty(true);
+          try { localStorage.setItem(draftKey(selectedFile), v); } catch {}
+        }}
       />
       <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
         After saving, run <code className="rounded bg-white/60 px-1">docker compose up -d</code> from the Shell tab or click Start/Restart to apply compose changes. <code className="rounded bg-white/60 px-1">.env</code> changes apply on the next container recreate.

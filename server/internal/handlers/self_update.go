@@ -84,11 +84,21 @@ func (h *SelfUpdateHandler) Status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res := map[string]interface{}{"helper_installed": true}
+	var changes []string
 	for _, line := range strings.Split(out, "\n") {
 		if k, v, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
+			// Multiple change= lines (one per pending commit) collect into a list;
+			// everything else is a single scalar field.
+			if k == "change" {
+				if v != "" {
+					changes = append(changes, v)
+				}
+				continue
+			}
 			res[k] = v
 		}
 	}
+	res["changes"] = changes
 	writeJSON(w, http.StatusOK, res)
 }
 

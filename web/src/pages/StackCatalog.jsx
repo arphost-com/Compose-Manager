@@ -349,7 +349,7 @@ export default function StackCatalog() {
             </div>
             <div className="mt-3 flex items-end justify-between gap-2">
               {template.image ? <div className="min-w-0 break-all font-mono text-xs text-gray-500">{template.image}</div> : <div />}
-              <Link to={`/documentation?search=${encodeURIComponent(template.name)}`} onClick={e => e.stopPropagation()} className="shrink-0 text-xs text-blue-600 underline hover:text-blue-800" title={`View documentation for ${template.name}`}>Docs</Link>
+              <Link to={`/docs?search=${encodeURIComponent(template.name)}`} onClick={e => e.stopPropagation()} className="shrink-0 text-xs text-blue-600 underline hover:text-blue-800" title={`View documentation for ${template.name}`}>Docs</Link>
             </div>
           </div>
         ))}
