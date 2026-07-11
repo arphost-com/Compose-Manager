@@ -41,20 +41,55 @@ cmd_update() {
   local dir; dir=$(find_dir) || { echo 'error=cannot locate stack-manager deploy dir'; return 1; }
   [ -n "$dir" ] || { echo 'error=empty deploy dir'; return 1; }
   local logf=/var/log/stack-manager-update.log
-  log "starting detached self-update in $dir (log: $logf)"
-  # Detach fully: new session, reparented to init when this helper exits, so the
-  # (minutes-long) rebuild keeps going while server/web restart.
-  setsid nohup bash -c "
+
+  # The rebuild takes minutes and RESTARTS the server/web containers, so it must
+  # outlive both this helper and the containers that triggered it. This helper
+  # runs inside a `docker run --rm` container; when that container exits, Docker
+  # SIGKILLs its entire cgroup. setsid/nohup escape the controlling terminal but
+  # NOT the cgroup, so a backgrounded child dies with the container (symptom: the
+  # log shows only the start banner). systemd-run launches the rebuild as a
+  # transient unit owned by the host's systemd (PID 1), fully outside this
+  # container's cgroup, so it survives.
+  # The script redirects its OWN stdout/stderr to the log via `exec` on line 1,
+  # so callers just run `bash -c "$script"` with no outer redirect or brace
+  # group. (A brace-group wrapper `{ $script ; }` breaks because $script ends in
+  # a newline, leaving a bare `;` that bash rejects under systemd-run/ExecStart.)
+  # Pass safe.directory inline on every git call: the systemd unit runs as root
+  # with a fresh env (no HOME), so `git config --global` writes nowhere useful and
+  # root would refuse the deploy tree if it's owned by another user ("dubious
+  # ownership"). Inline -c needs no config file or HOME.
+  local git="git -c safe.directory='$dir'"
+  local script="exec >'$logf' 2>&1
     cd '$dir' || exit 1
-    git config --global --add safe.directory '$dir' 2>/dev/null || true
     echo \"=== \$(date -u) self-update starting ===\"
-    git fetch origin || exit 1
-    git reset --hard '@{u}' || exit 1
-    export VITE_GIT_SHA=\$(git rev-parse --short HEAD)
-    docker compose --env-file .env up -d --build --remove-orphans
-    echo \"=== \$(date -u) self-update done ===\"
-  " >"$logf" 2>&1 &
-  echo "update started (detached)"
+    $git fetch origin || { echo 'ERROR: git fetch failed'; exit 1; }
+    $git reset --hard '@{u}' || { echo 'ERROR: git reset failed'; exit 1; }
+    export VITE_GIT_SHA=\$($git rev-parse --short HEAD)
+    echo \"rebuilding at \$VITE_GIT_SHA\"
+    docker compose --env-file .env up -d --build --remove-orphans || { echo 'ERROR: compose up failed'; exit 1; }
+    echo \"=== \$(date -u) self-update done ===\""
+
+  if command -v systemd-run >/dev/null 2>&1; then
+    # Clear any prior transient unit of this name so a stale/failed one can't
+    # block relaunch, then run detached under systemd (--collect auto-removes it
+    # when it finishes).
+    systemctl reset-failed stack-manager-selfupdate.service 2>/dev/null || true
+    if systemd-run --collect --unit=stack-manager-selfupdate \
+        --setenv=HOME=/root \
+        --setenv=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        bash -c "$script" >/dev/null 2>&1; then
+      log "starting self-update in $dir via systemd (log: $logf)"
+      echo "update started (systemd transient unit)"
+      return 0
+    fi
+    log "systemd-run unavailable/failed; falling back to setsid"
+  fi
+
+  # Fallback for non-systemd hosts: setsid detached. Less robust across the
+  # helper-container exit, but the best available without systemd.
+  log "starting detached self-update in $dir (log: $logf)"
+  setsid nohup bash -c "$script" >/dev/null 2>&1 &
+  echo "update started (detached fallback)"
 }
 
 case "${1:-status}" in

@@ -27,6 +27,7 @@ import (
 	"github.com/arphost-com/Stack-Manager/server/internal/skills/frontend"
 	"github.com/arphost-com/Stack-Manager/server/internal/skills/security"
 	"github.com/arphost-com/Stack-Manager/server/internal/storage"
+	"github.com/arphost-com/Stack-Manager/server/internal/version"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -128,6 +129,17 @@ func main() {
 	// DB-stored runtime settings (Settings > General) override the .env-derived
 	// config here, before the managers/engine consume it. .env stays the seed.
 	applyDBSettingOverrides(context.Background(), appStore, cfg, engine)
+
+	// Stamp the running build's version into the DB so the footer reflects the
+	// deployed commit on EVERY rebuild path (deploy.sh, UI self-update, bare
+	// compose) — not just when deploy.sh happens to PUT it. Only when a SHA was
+	// baked in, so a plain `go build` (GitSHA empty) can't clobber a good value
+	// with the bare base version.
+	if version.GitSHA != "" {
+		if err := appStore.SetSettingString(context.Background(), "app_version", version.Full()); err != nil {
+			log.Printf("warning: could not stamp app_version: %v", err)
+		}
+	}
 
 	jobs := core.NewJobManager(appStore)
 	scheduler := core.NewScheduleManager(engine, jobs, appStore)

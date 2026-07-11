@@ -5,7 +5,13 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /stack-manager-server ./cmd/server
+# APP_GIT_SHA stamps the running build's commit into the binary so the server
+# can report its own version (footer/system-info and agent check-in). Wired from
+# the same short SHA the web build uses (VITE_GIT_SHA) via compose build args.
+ARG APP_GIT_SHA=
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X 'github.com/arphost-com/Stack-Manager/server/internal/version.GitSHA=${APP_GIT_SHA}'" \
+    -o /stack-manager-server ./cmd/server
 
 ARG BASE_IMAGE_PREFIX=
 FROM ${BASE_IMAGE_PREFIX}alpine:3.22

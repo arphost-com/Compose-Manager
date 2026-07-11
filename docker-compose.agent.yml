@@ -30,6 +30,7 @@ services:
       context: ./server
       args:
         BASE_IMAGE_PREFIX: ${BASE_IMAGE_PREFIX:-}
+        APP_GIT_SHA: ${VITE_GIT_SHA:-}
     environment:
       APP_MODE: "${APP_MODE:-agent-callback}"
       PORT: "${AGENT_PORT:-8192}"

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/arphost-com/Stack-Manager/server/internal/storage"
+	"github.com/arphost-com/Stack-Manager/server/internal/version"
 )
 
 // SystemInfoHandler exposes a friendly display name for this controller so the
@@ -40,11 +41,18 @@ func (h *SystemInfoHandler) serverName(r *http.Request) string {
 
 func (h *SystemInfoHandler) Get(w http.ResponseWriter, r *http.Request) {
 	res := map[string]string{"server_name": h.serverName(r)}
+	ver := ""
 	if h.Store != nil {
 		if v, ok := h.Store.GetSettingString(r.Context(), "app_version"); ok {
-			res["version"] = v
+			ver = strings.TrimSpace(v)
 		}
 	}
+	// Fall back to the build-baked version if the DB was never stamped (e.g.
+	// first boot before the startup stamp, or a build without a SHA).
+	if ver == "" {
+		ver = version.Full()
+	}
+	res["version"] = ver
 	writeJSON(w, http.StatusOK, res)
 }
 

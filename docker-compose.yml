@@ -33,6 +33,7 @@ services:
       context: ./server
       args:
         BASE_IMAGE_PREFIX: ${BASE_IMAGE_PREFIX:-}
+        APP_GIT_SHA: ${VITE_GIT_SHA:-}
     environment:
       PORT: "8192"
       # ROOT and the /docker mount below both use ${DOCKER_ROOT} so paths
