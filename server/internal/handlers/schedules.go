@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -106,8 +107,19 @@ type AgentHandler struct {
 
 func NewAgentHandler(store *storage.Store) *AgentHandler {
 	return &AgentHandler{
-		Store:      store,
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		Store: store,
+		// Inbound agents present the same self-signed TLS cert as controllers, so
+		// this client must tolerate it (like the agent-proxy / peer clients) or
+		// the /agent/v1 fetch fails with "certificate is valid for 127.0.0.1".
+		HTTPClient: &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{ // nosemgrep: problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification.bypass-tls-verification
+					InsecureSkipVerify: true,
+					MinVersion:         tls.VersionTLS13,
+				},
+			},
+		},
 	}
 }
 
@@ -282,6 +294,19 @@ func (h *AgentHandler) Projects(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, snapshot.Projects)
+		return
+	}
+	// A peer is a full controller reached over its /api/v1 (X-API-Key), not the
+	// agent /agent/v1 path — and via peerClient, which tolerates the self-signed
+	// cert. Delegating here fixes server-to-server that otherwise fails with a
+	// TLS "certificate is valid for 127.0.0.1" error.
+	if agent.Mode == "peer" {
+		projects, err := fetchPeerProjects(r.Context(), agent, r.URL.RawQuery)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, projects)
 		return
 	}
 	base, err := url.Parse(agent.BaseURL)
