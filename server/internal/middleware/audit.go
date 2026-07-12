@@ -91,12 +91,24 @@ func parseAuditRoute(r *http.Request) (action, project, target string) {
 			}
 		}
 	}
-	action = friendlyAction(r.Method, r.URL.Path)
+	pattern := ""
+	if rctx != nil {
+		pattern = rctx.RoutePattern()
+	}
+	action = friendlyAction(r.Method, r.URL.Path, pattern)
 	return
 }
 
-func friendlyAction(method, path string) string {
-	trimmed := strings.TrimPrefix(path, "/api/v1/")
+// friendlyAction prefers chi's matched route PATTERN (e.g.
+// "/api/v1/projects/{name}/update") over the concrete path, so every project's
+// update collapses to one stable action name that can be filtered as a group.
+// Falls back to the concrete path if no pattern is available.
+func friendlyAction(method, path, pattern string) string {
+	p := pattern
+	if strings.TrimSpace(p) == "" || strings.Contains(p, "/*") {
+		p = path
+	}
+	trimmed := strings.TrimPrefix(p, "/api/v1/")
 	trimmed = strings.TrimSuffix(trimmed, "/")
 	return method + " " + trimmed
 }

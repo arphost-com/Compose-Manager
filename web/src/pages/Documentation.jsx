@@ -765,7 +765,7 @@ function Code({ children }) {
 
 const GH_BASE = 'https://github.com/arphost-com/Stack-Manager/blob/main';
 
-function StackManagerDocs() {
+export function StackManagerDocs() {
   return (
     <div className="space-y-4">
       <DocSection title="What Stack Manager is">
@@ -866,7 +866,7 @@ const COMPOSE_COMMANDS = [
   ['Recreate cleanly', 'docker compose up -d --force-recreate --remove-orphans', 'Force new containers and drop containers for services no longer in the file.'],
 ];
 
-function GpuDocs() {
+export function GpuDocs() {
   return (
     <div className="space-y-4">
       <section className="section-panel space-y-2 border-amber-200 bg-amber-50">
@@ -911,7 +911,7 @@ function GpuDocs() {
   );
 }
 
-function DockerComposeDocs() {
+export function DockerComposeDocs() {
   return (
     <div className="space-y-4">
       <DocSection title="Docker Compose">

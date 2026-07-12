@@ -28,6 +28,7 @@ func (h *AuditHandler) List(w http.ResponseWriter, r *http.Request) {
 		Node:    strings.TrimSpace(q.Get("node")),
 		Actor:   strings.TrimSpace(q.Get("actor")),
 		Action:  strings.TrimSpace(q.Get("action")),
+		Q:       strings.TrimSpace(q.Get("q")),
 		Project: strings.TrimSpace(q.Get("project")),
 	}
 	if s := q.Get("since"); s != "" {

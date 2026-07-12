@@ -496,7 +496,10 @@ export default function ProjectDetail() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <Link to="/" className="text-sm text-blue-700 hover:underline">Back to dashboard</Link>
+          <div className="flex items-center gap-3">
+            <Link to="/" className="text-sm text-blue-700 hover:underline">Back to dashboard</Link>
+            <Link to={`/audit?project=${encodeURIComponent(name)}`} className="text-sm text-blue-700 hover:underline" title="See this project's updates, backups, and every other action in the Audit Log.">Activity log →</Link>
+          </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold text-gray-950">{project.name}</h1>
             {isRemote && (

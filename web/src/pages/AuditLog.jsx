@@ -1,15 +1,24 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { audit } from '../api/client';
 
 const emptyFilters = {
   node: '',
   action: '',
+  q: '',
   project: '',
   actor: '',
   success: '',
   limit: 100,
   offset: 0,
 };
+
+// Quick presets: substring-match the action name so every project's update /
+// backup collapses into one view.
+const PRESETS = [
+  { key: 'updates', label: 'Updates run', q: 'update' },
+  { key: 'backups', label: 'Backups run', q: 'backup/create' },
+];
 
 function formatDuration(ms) {
   if (!ms || ms < 0) return '—';
@@ -20,12 +29,15 @@ function formatDuration(ms) {
 }
 
 export default function AuditLog() {
+  const [searchParams] = useSearchParams();
   const [filters, setFilters] = useState(emptyFilters);
   const [entries, setEntries] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [actions, setActions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [highlightId, setHighlightId] = useState('');
+  const rowRefs = useRef({});
 
   const load = useCallback(async (nextFilters) => {
     setLoading(true);
@@ -40,13 +52,42 @@ export default function AuditLog() {
     }
   }, []);
 
+  // Seed filters from the URL on mount so deep links work, e.g.
+  // /audit?project=lidarr&q=update&highlight=42 (Updates for a project, jumping
+  // to a specific entry).
   useEffect(() => {
     Promise.all([audit.nodes(), audit.actions()]).then(([n, a]) => {
       setNodes(n.data || []);
       setActions(a.data || []);
     }).catch(err => setError(err.message));
-    load(emptyFilters);
+    const fromUrl = {
+      ...emptyFilters,
+      node: searchParams.get('node') || '',
+      action: searchParams.get('action') || '',
+      q: searchParams.get('q') || '',
+      project: searchParams.get('project') || '',
+      actor: searchParams.get('actor') || '',
+      success: searchParams.get('success') || '',
+    };
+    setHighlightId(searchParams.get('highlight') || '');
+    setFilters(fromUrl);
+    load(fromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
+
+  // Scroll to the deep-linked entry once the rows render.
+  useEffect(() => {
+    if (!highlightId) return;
+    const el = rowRefs.current[String(highlightId)];
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlightId, entries]);
+
+  const applyPreset = (q) => {
+    const next = { ...emptyFilters, q };
+    setFilters(next);
+    setHighlightId('');
+    load(next);
+  };
 
   const submit = (event) => {
     event.preventDefault();
@@ -75,6 +116,13 @@ export default function AuditLog() {
           <button type="button" className="btn-secondary" onClick={() => load(filters)} disabled={loading} title="Re-fetch the current filter results.">
             {loading ? 'Loading…' : 'Refresh'}
           </button>
+        </div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Quick view:</span>
+          {PRESETS.map(p => (
+            <button key={p.key} type="button" onClick={() => applyPreset(p.q)} className={`btn-secondary text-xs ${filters.q === p.q ? 'ring-2 ring-blue-500' : ''}`}>{p.label}</button>
+          ))}
+          <button type="button" onClick={clear} className="btn-secondary text-xs">All activity</button>
         </div>
         <form onSubmit={submit} className="grid gap-3 md:grid-cols-6">
           <label className="text-sm">
@@ -156,7 +204,11 @@ export default function AuditLog() {
               <tr><td colSpan={9} className="px-2 py-6 text-center text-gray-500">No entries match the current filters.</td></tr>
             )}
             {entries.map(entry => (
-              <tr key={entry.id} className="align-top hover:bg-gray-100">
+              <tr
+                key={entry.id}
+                ref={el => { if (el) rowRefs.current[String(entry.id)] = el; }}
+                className={`align-top ${String(entry.id) === String(highlightId) ? 'bg-yellow-100 ring-2 ring-inset ring-yellow-400' : 'hover:bg-gray-100'}`}
+              >
                 <td className="truncate px-2 py-2 font-mono text-[11px]" title={new Date(entry.created_at).toISOString()}>{new Date(entry.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td>
                 <td className="truncate px-2 py-2 text-xs" title={entry.node}>{entry.node || '—'}</td>
                 <td className="truncate px-2 py-2 text-xs" title={entry.actor}>{entry.actor || '—'}</td>

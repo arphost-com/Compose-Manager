@@ -30,6 +30,9 @@ type AuditListParams struct {
 	Node    string
 	Actor   string
 	Action  string
+	// Q is a case-insensitive substring matched against the action name (for
+	// preset filters like "updates" / "backups" that span many route patterns).
+	Q       string
 	Project string
 	Since   time.Time
 	Until   time.Time
@@ -88,6 +91,10 @@ func (s *Store) ListAuditEntries(ctx context.Context, p AuditListParams) ([]Audi
 	if p.Action != "" {
 		q += " AND action=?"
 		args = append(args, p.Action)
+	}
+	if p.Q != "" {
+		q += " AND action LIKE ?"
+		args = append(args, "%"+p.Q+"%")
 	}
 	if p.Project != "" {
 		q += " AND project=?"
