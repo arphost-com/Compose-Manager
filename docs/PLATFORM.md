@@ -11,6 +11,7 @@ page in the UI.
 - [Manual upgrade from an old version](#manual-upgrade-from-an-old-version)
 - [TLS / SSL](#tls--ssl)
 - [Host helper scripts](#host-helper-scripts)
+- [Timezone](#timezone)
 - [Backups](#backups)
 - [Base-image routing](#base-image-routing)
 - [Troubleshooting](#troubleshooting)
@@ -111,14 +112,20 @@ Three supported paths, all equivalent in result:
 
 ### 1. UI — Settings → Update → "Update now" (no SSH)
 
-Pulls the latest code and rebuilds the stack **detached on the host** so it
-survives the server/web containers restarting. The panel shows how many commits
-you're behind and **what's in the update** (the pending commit subjects). One
-time per host, install the update helper (the panel shows the exact command):
+Pulls the latest code and rebuilds the stack **detached on the host** (via a
+transient `systemd-run` unit) so it survives the server/web containers
+restarting. The panel shows how many commits you're behind and **what's in the
+update** — the pending commit subjects (`git log HEAD..@{u}`), so you see the
+changelog before you click. The update helper is **installed automatically** the
+first time the stack comes up (see [Host helper scripts](#host-helper-scripts));
+if it's missing on an older install, the panel prints the one-time command:
 
 ```bash
 sudo install -m 750 scripts/stack-manager-update.sh /usr/local/sbin/stack-manager-update
 ```
+
+> A **CI/rsync-deployed** host (no `.git` in the deploy tree) can't self-update
+> in place — the panel says so and you update it through its pipeline instead.
 
 ### 2. `deploy.sh` (SSH, recommended for a full refresh)
 
@@ -224,8 +231,22 @@ container:
 | `stack-manager-csf` | ConfigServer csf/lfd firewall |
 | `stack-manager-tz` | Host system timezone (Debian + Ubuntu) |
 
-`deploy.sh` installs/refreshes all of them. Until a helper is installed, its
-panel shows a one-time `sudo install …` hint instead of its controls.
+These are **installed automatically** every time the stack comes up — the
+`state-init` sidecar copies them from `./scripts` to the host's
+`/usr/local/sbin`, so the GPU/OS/Update/Firewall/Timezone panels activate on
+first boot on every node with no manual step. `deploy.sh` also installs them.
+Until a helper is present, its panel shows a one-time `sudo install …` hint.
+
+---
+
+## Timezone
+
+**Settings → Timezone** sets the **host system clock** (via `timedatectl` on
+Debian/Ubuntu, through the `stack-manager-tz` helper) — not just an app setting.
+All Stack Manager containers mount `/etc/localtime` read-only, so after they
+restart their logs, audit entries, backup filenames, and schedule times follow
+the host's local time. The panel shows the host's current zone and, if the
+helper isn't installed yet, the one-time install command.
 
 ---
 

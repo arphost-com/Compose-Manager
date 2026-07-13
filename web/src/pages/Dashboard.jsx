@@ -3,6 +3,19 @@ import { Link } from 'react-router-dom';
 import { projects, projectsForSource, jobs, skills as skillsApi, system, systemForSource, registries, agents as agentsApi, schedules as schedulesApi, metrics as metricsApi, backup as backupApi, updates as updatesApi } from '../api/client';
 import { useFollowingScroll } from '../hooks/useFollowingScroll';
 
+// GPU passthrough deploy block + a toggle that injects/removes it in a compose
+// (same behaviour as the Stack Catalog checkbox). Anchors on the first
+// "restart: unless-stopped", so in a multi-service stack it targets the first
+// service (e.g. ollama in OpenBrain) — the one that needs the GPU.
+const GPU_DEPLOY_SNIPPET = '    deploy:\n      resources:\n        reservations:\n          devices:\n            - driver: nvidia\n              count: all\n              capabilities: [gpu]\n';
+const composeHasGpu = (compose) => (compose || '').includes('capabilities: [gpu]');
+const applyGpuToCompose = (compose, enable) => {
+  const has = composeHasGpu(compose);
+  if (enable && !has) return compose.replace(/(restart:\s*unless-stopped\n)/, '$1' + GPU_DEPLOY_SNIPPET);
+  if (!enable && has) return compose.replace(GPU_DEPLOY_SNIPPET, '');
+  return compose;
+};
+
 // Client-side snapshot cache so the Dashboard paints the last-known state
 // immediately on mount, then refreshes in the background. Keyed by the
 // filter combo so include-inactive / running-only don't leak into each other.
@@ -891,6 +904,10 @@ export default function Dashboard() {
               <label className="flex items-center gap-2 text-sm text-gray-700" title="Allow replacing compose.yml and .env if the folder already exists.">
                 <input type="checkbox" checked={createForm.overwrite} onChange={e => setCreateForm({ ...createForm, overwrite: e.target.checked })} />
                 Overwrite existing
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700" title="Inject deploy.resources.reservations.devices so the stack's first service can use an NVIDIA GPU before you spin it up. Requires the host GPU stack (Settings > GPU). You can also add it later from a project's Overview.">
+                <input type="checkbox" checked={composeHasGpu(createForm.compose_content)} onChange={e => setCreateForm({ ...createForm, compose_content: applyGpuToCompose(createForm.compose_content, e.target.checked) })} />
+                Add GPU passthrough (NVIDIA)
               </label>
               <button type="submit" title="Create the compose project folder and files." className="btn-primary w-full">Create</button>
             </div>

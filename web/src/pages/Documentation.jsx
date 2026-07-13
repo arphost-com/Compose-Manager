@@ -10,11 +10,13 @@ const CATEGORY_LABELS = {
   devtools: 'Dev Tools',
   docs: 'Docs',
   files: 'Files',
+  gaming: 'Gaming',
   management: 'Management',
   media: 'Media',
   monitoring: 'Monitoring',
   proxy: 'Proxy',
   queue: 'Queue',
+  remote: 'Remote',
   security: 'Security',
   web: 'Web',
 };
@@ -28,19 +30,37 @@ const CATEGORY_DESCRIPTIONS = {
   devtools: 'Developer tools: CI/CD servers, Git forges, in-browser IDEs, code intelligence, and diagram editors.',
   docs: 'Wikis, technical documentation, and knowledge bases.',
   files: 'File sync, share, and object storage servers.',
+  gaming: 'Game servers and game-hosting control panels.',
   management: 'Docker and infrastructure management dashboards.',
   media: 'Media servers, libraries, and download automation.',
   monitoring: 'Metrics, uptime, logging, and observability.',
   proxy: 'Reverse proxies, load balancers, and forward proxies.',
   queue: 'Message queues, brokers, and workflow orchestrators.',
+  remote: 'Remote desktop and remote-access gateways.',
   security: 'Authentication, SSO, VPNs, and security scanners.',
   web: 'Web servers and static hosting.',
 };
 
-const CATEGORY_ORDER = ['ai', 'web', 'proxy', 'cms', 'database', 'devtools', 'docs', 'files', 'management', 'media', 'monitoring', 'queue', 'security', 'automation'];
+const CATEGORY_ORDER = ['ai', 'web', 'proxy', 'cms', 'database', 'devtools', 'docs', 'files', 'gaming', 'management', 'media', 'monitoring', 'queue', 'remote', 'security', 'automation'];
 const PAGE_SIZES = [20, 40, 80, 199];
 
 const enhancedGuides = {
+  'openbrain-voice': {
+    fit: 'A local voice AI: talk to it (Whisper STT + Kokoro TTS), search the web (SearXNG), write code (Code Llama), keep memory (mem0), and automate tasks (n8n/Flowise) — all through Open WebUI + Ollama.',
+    setup: [
+      'Wait for the ollama-init sidecar to pull the models (llama3.1 + codellama + embeddings, a few GB) — watch the Logs tab. Chat and code work once it finishes.',
+      'Open WebUI on WEBUI_PORT: create the first account (it becomes admin), then pick llama3.1 for chat or codellama for coding.',
+      'Voice is pre-wired: click the mic to talk (Whisper speech-to-text), the speaker to hear replies (Kokoro text-to-speech). Piper is a bonus Wyoming TTS for Home Assistant/n8n.',
+      'Web search needs one step: add "json" under search.formats in SearXNG settings.yml, restart searxng, then toggle Web Search in a chat.',
+      'Memory (mem0/OpenMemory on MEM0_PORT): point its LLM at the local Ollama (http://ollama:11434) or set OPENAI_API_KEY. Document RAG uses Qdrant automatically.',
+      'Change POSTGRES_PASSWORD / WEBUI_SECRET_KEY / FLOWISE_PASSWORD before exposing it.',
+    ],
+    caution: 'Heavy stack — 16 GB+ RAM and a GPU (enable passthrough on Ollama) strongly recommended. Run one heavy AI stack per GPU at a time.',
+    links: [
+      ['Full setup guide (docs/OPENBRAIN4.md)', 'https://github.com/arphost-com/Stack-Manager/blob/main/docs/OPENBRAIN4.md'],
+      ['Open WebUI docs', 'https://docs.openwebui.com/'],
+    ],
+  },
   librechat: {
     fit: 'Multi-user AI chat, agents, MCP, files, and multi-provider routing.',
     setup: [
@@ -894,7 +914,7 @@ export function GpuDocs() {
 
       <DocSection title="Give a stack the GPU">
         <p className="text-sm leading-6 text-gray-700">
-          When you open an AI template with a GPU present, an <strong>Add GPU passthrough</strong> checkbox injects the compose device reservation for you. For an existing project, the <strong>Enable GPU</strong> action on its Overview adds the <code className="rounded bg-gray-100 px-1">deploy.resources.reservations.devices</code> block and restarts it. Tdarr and other transcoders benefit from the same passthrough.
+          Check <strong>Add GPU passthrough</strong> on the Stack Catalog spin-up <em>or</em> the Create Project form and it injects the compose device reservation before deploy (it lands on the first service — e.g. Ollama in the OpenBrain stacks). AI templates default it on when a GPU is detected. For an already-running project, the <strong>Enable GPU</strong> action on its Overview adds the <code className="rounded bg-gray-100 px-1">deploy.resources.reservations.devices</code> block and restarts it. Tdarr and other transcoders benefit from the same passthrough.
         </p>
       </DocSection>
 

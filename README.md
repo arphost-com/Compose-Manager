@@ -1,6 +1,6 @@
 # Stack Manager
 
-Manage all your Docker Compose stacks from one dashboard. Discover, deploy, update, back up, and monitor projects across a fleet of hosts — with a 200-template catalog, scheduled updates, live shell access, firewall management, two-factor auth, and agents that phone home from behind NAT.
+Manage all your Docker Compose stacks from one dashboard. Discover, deploy, update, back up, and monitor projects across a fleet of hosts — with a 200+ template catalog, scheduled updates, live shell access, firewall management, two-factor auth, and agents that phone home from behind NAT.
 
 <!-- Replace with your own screenshot: docs/images/dashboard-dark.png -->
 
@@ -11,7 +11,9 @@ Manage all your Docker Compose stacks from one dashboard. Discover, deploy, upda
 - **200+ one-click stack templates** — AI, databases, CMS, monitoring, proxies, dev tools, media, and more. Pick a template, review the compose and env, and spin it up.
 - **In-browser config editor** — edit compose.yml, .env, Caddyfile, and other project files directly from the dashboard with automatic .bak backups.
 - **Fleet management with agents & peers** — register remote Docker hosts as outbound (phone-home), inbound, or combined agents, or add another full install as a **peer controller**. The "All Servers" view shows every connected host; open and manage their projects, and act across all of them from one controller. Behind-NAT **callback agents** are managed through a command queue that runs on their next check-in. All cross-server traffic uses TLS 1.3.
-- **GPU for AI stacks** — Settings > GPU detects the host GPU and runs a real `--gpus all` test container (nvidia-smi) to prove passthrough works; AI stack templates get a one-click "Add GPU passthrough" checkbox.
+- **GPU for AI stacks** — Settings > GPU detects the host GPU, one-click-installs the NVIDIA driver + toolkit, and runs a real `--gpus all` test container (nvidia-smi) to prove passthrough works. "Add GPU passthrough" is a checkbox on both the Stack Catalog and the Create Project form (baked in before deploy), or an **Enable GPU** action after the fact.
+- **Per-stack volumes & networks** — inspect a project's Docker volumes and networks (with in-use containers) and safely delete them, scoped to that stack, from its detail page.
+- **One-click self-update** — Settings > Update pulls and rebuilds the controller on the host (detached, survives the restart) and shows **what's in the update** (the pending commit subjects) before you run it.
 - **Scheduled updates** — daily at 03:00, weekly on Saturday, monthly on the 15th, or every N minutes. Per-project update policies prevent accidental breakage.
 - **Backup to anywhere** — local paths, CIFS, NFS, FTP, SFTP (with in-browser SSH key generation), and S3. Automatic local archive + remote copy.
 - **Live in-browser shell** — xterm.js terminal with real PTY support that opens an interactive session inside any running container via WebSocket + docker exec. Tab completion, arrow keys, colors, and resize — as fast as SSH.
@@ -19,12 +21,12 @@ Manage all your Docker Compose stacks from one dashboard. Discover, deploy, upda
 - **Reverse proxy integration** — one-click **deploy** Nginx Proxy Manager, then add proxied domains from the dashboard: per-project **Add to Proxy**, a one-click **proxy the Stack Manager UI** target, and auto-filled forwards for running projects. Let's Encrypt stays separate for non-proxy installs.
 - **Two-factor authentication** — TOTP (Google Authenticator / Authy) with QR enrollment, backup codes, and per-user enable/disable.
 - **Self-signed TLS out of the box** — HTTPS on first boot with zero config. Optional Let's Encrypt or Nginx Proxy Manager for real domains.
-- **General settings in the browser** — change ports, cache TTLs, host URL, a friendly **server display name** (shown in the server selector instead of the IP), and roll the API key from Settings > General without touching .env or SSH.
+- **General settings in the browser** — change ports, cache TTLs, host URL, a friendly **server display name** (shown in the server selector instead of the IP), the **timezone** (which sets the host system clock via `timedatectl` so all containers follow it), and roll the API key from Settings > General without touching .env or SSH.
 - **Multiple Docker roots** — discover projects across more than one host directory via `EXTRA_DOCKER_ROOTS`.
 - **Docker daemon settings** — edit `daemon.json` from the browser with tooltips, backups, and teardown guidance for network changes.
 - **Security scans** — image vulnerability scanning and compose audit from the project detail page.
 - **Database checks** — health checks and SQL dumps for MariaDB, MySQL, and PostgreSQL containers.
-- **Audit log** — every action recorded with actor, project, result, and timestamp.
+- **Audit log** — every mutating action recorded with actor, project, result, and timestamp, with quick "Updates run" / "Backups run" presets and an **Activity log** link from each project that deep-links to its entries.
 
 ---
 
@@ -77,7 +79,7 @@ The main page shows every discovered Compose project with live state, image sour
 
 ### Stack Catalog (200+ Templates)
 
-Browse and deploy from a curated catalog organized into 14 categories and 10 AI subcategories:
+Browse and deploy from a curated catalog organized into 16 categories and 10 AI subcategories:
 
 | Category | Examples |
 |----------|----------|

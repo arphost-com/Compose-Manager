@@ -1,9 +1,10 @@
 package core
 
-// OpenBrain templates: opinionated multi-service local-AI stacks. All three are
+// OpenBrain templates: opinionated multi-service local-AI stacks. #1-#3 are
 // deploy-verified end to end (containers boot cleanly with 0 restarts and the
-// service endpoints respond). See web/src/pages/Documentation.jsx for the full
-// setup guides shown in the dashboard.
+// service endpoints respond). #4 (voice assistant) is a newer, broader stack —
+// see docs/OPENBRAIN4.md for its post-deploy configuration guide. See
+// web/src/pages/Documentation.jsx for the setup guides shown in the dashboard.
 func openbrainTemplates() []StackTemplate {
 	return []StackTemplate{
 		{
@@ -356,7 +357,7 @@ networks:
 			Name:        "OpenBrain #4 — Voice Assistant (speech, web, code, memory)",
 			Description: "The do-everything local AI: talk to it (Whisper STT + Kokoro/Piper TTS), search the web (SearXNG), write code (Code Llama), keep memory (mem0 + Qdrant), and automate tasks (n8n + Flowise) — all wired to Open WebUI and Ollama.",
 			Category:    "ai",
-			Subcategory: "voice-assistant",
+			Subcategory: "voice-speech",
 			Source:      "arphost",
 			Image:       "ghcr.io/open-webui/open-webui:main",
 			Tags:        []string{"ai", "voice", "stt", "tts", "whisper", "kokoro", "piper", "ollama", "codellama", "rag", "web-search", "searxng", "memory", "mem0", "n8n", "flowise", "qdrant"},

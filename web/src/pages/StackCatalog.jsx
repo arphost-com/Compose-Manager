@@ -10,11 +10,13 @@ const CATEGORY_LABELS = {
   devtools: 'Dev Tools',
   docs: 'Docs',
   files: 'Files',
+  gaming: 'Gaming',
   management: 'Management',
   media: 'Media',
   monitoring: 'Monitoring',
   proxy: 'Proxy',
   queue: 'Queue',
+  remote: 'Remote',
   security: 'Security',
   web: 'Web',
 };
