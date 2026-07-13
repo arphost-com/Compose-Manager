@@ -58,6 +58,7 @@ const enhancedGuides = {
     caution: 'Heavy stack — 16 GB+ RAM and a GPU (enable passthrough on Ollama) strongly recommended. Run one heavy AI stack per GPU at a time.',
     links: [
       ['Full setup guide (docs/OPENBRAIN4.md)', 'https://github.com/arphost-com/Stack-Manager/blob/main/docs/OPENBRAIN4.md'],
+      ['Recipes: audio→text→rewrite→audio & more', 'https://github.com/arphost-com/Stack-Manager/blob/main/docs/OPENBRAIN4-RECIPES.md'],
       ['Open WebUI docs', 'https://docs.openwebui.com/'],
     ],
   },
@@ -372,6 +373,7 @@ export default function Documentation() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [error, setError] = useState('');
+  const [projectsLoading, setProjectsLoading] = useState(true);
   const [docsTab, setDocsTab] = useState(() => {
     try { return localStorage.getItem('cm_docs_tab') || 'current'; } catch { return 'current'; }
   });
@@ -380,18 +382,17 @@ export default function Documentation() {
     try { localStorage.setItem('cm_docs_tab', value); } catch {}
   };
 
-  const load = async () => {
-    try {
-      const [templateRes, projectRes] = await Promise.all([
-        stackTemplates.list(),
-        projects.list({ include_inactive: true }),
-      ]);
-      setTemplates(templateRes.data || []);
-      setProjectList(projectRes.data || []);
-      setError('');
-    } catch (err) {
-      setError(err.message);
-    }
+  const load = () => {
+    setError('');
+    // Fire both independently: the template catalog is fast/static, while full
+    // project discovery can take a few seconds — don't block the Stack Catalog /
+    // Stack Manager / Docker Compose / GPU tabs (which don't need projects) on it.
+    stackTemplates.list().then(r => setTemplates(r.data || [])).catch(err => setError(err.message));
+    setProjectsLoading(true);
+    projects.list({ include_inactive: true })
+      .then(r => setProjectList(r.data || []))
+      .catch(() => {})
+      .finally(() => setProjectsLoading(false));
   };
 
   useEffect(() => { load(); }, []);
@@ -520,7 +521,8 @@ export default function Documentation() {
           </div>
           <div className="grid gap-3 lg:grid-cols-2">
             {projectList.filter(p => { const q = query.trim().toLowerCase(); return !q || (p.name || '').toLowerCase().includes(q); }).map(project => <CurrentStackDoc key={project.name} project={project} />)}
-            {projectList.length === 0 && <div className="py-8 text-center text-sm text-gray-500 lg:col-span-2">No current stacks were discovered.</div>}
+            {projectsLoading && projectList.length === 0 && <div className="py-8 text-center text-sm text-gray-500 lg:col-span-2">Loading your stacks…</div>}
+            {!projectsLoading && projectList.length === 0 && <div className="py-8 text-center text-sm text-gray-500 lg:col-span-2">No current stacks were discovered.</div>}
           </div>
         </section>
       )}
