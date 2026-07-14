@@ -161,6 +161,111 @@ TTS_URL="http://HOST:8003/v1/audio/speech" TTS_MODEL="tts-1-hd" VOICE="myvoice" 
 
 ---
 
+## Making it sound natural (less robotic)
+
+"Robotic" is almost always fixable. Biggest lever first.
+
+### 1. Use XTTS (`tts-1-hd`), not Kokoro, for realism
+Kokoro is *fast* but flatter/synthetic. **openedai-speech's XTTS-v2** sounds far more
+human (natural prosody, breaths, intonation). This one switch is ~80% of the win.
+
+**Set it in Open WebUI:**
+1. Bottom-left → your **avatar** → **Admin Panel** → **Settings** → **Audio**.
+2. Under **Text-to-Speech (TTS)**:
+
+   | Field | Value |
+   |---|---|
+   | TTS Engine | **OpenAI** |
+   | API Base URL | `http://openedai-speech:8000/v1` |
+   | API Key | `sk-none` (any non-empty text) |
+   | TTS Model | `tts-1-hd` |
+   | TTS Voice | `alloy` (built-in XTTS voice — works immediately) |
+
+3. **Save**. Then in a chat, hover a reply → click the **🔊 Read Aloud** icon.
+
+> Use the **internal** URL `http://openedai-speech:8000/v1` (not the host IP:8003) —
+> it's Open WebUI's *server* that calls TTS, over the Docker network, not your browser.
+> Sanity check the service first at `http://<host>:8003/docs`.
+
+### 2. Tune XTTS — the anti-monotone knobs
+In `config/voice_to_speaker.yaml`, `temperature` is the expressiveness dial:
+
+```yaml
+tts-1-hd:
+  myvoice:
+    model: xtts_v2.0.2
+    speaker: /app/voices/myvoice.wav
+    enable_text_splitting: true
+    temperature: 0.78        # 0.6 flat/safe -> 0.85 lively (too high = unstable)
+    repetition_penalty: 5.0
+    length_penalty: 1.0
+    top_k: 50
+    top_p: 0.85
+    speed: 1.0               # 0.9 = slower, calmer, more natural
+```
+
+### 3. The reference sample is everything (for clones)
+XTTS copies the *energy* of your sample — a flat/noisy reference clones a robotic
+voice. Use a **clean 15-30s clip, good mic, natural expressive speech** (vary your
+pitch). Convert cleanly: `ffmpeg -i in.mp3 -ar 24000 -ac 1 myvoice.wav`.
+
+### 4. Punctuation drives prosody (helps every engine)
+The model reads punctuation as pauses and melody. Add commas/periods, break run-ons
+into sentences, spell out numbers/abbreviations (`Dr.` -> `Doctor`, `2026` ->
+`twenty twenty-six`), avoid ALL-CAPS. Add an LLM step: *"format for text-to-speech:
+natural sentences and punctuation"* before synthesis.
+
+### 5. Staying on Kokoro?
+- Pick a **warmer voice**: `af_heart`, `af_bella`, `af_nicole` (some are far less robotic).
+- **Slow it slightly:** `{"model":"kokoro","voice":"af_bella","input":"...","speed":0.9}`.
+- Keep chunks to whole sentences so prosody isn't clipped.
+
+**Quick win:** `tts-1-hd` + `temperature: 0.78` + `speed: 0.95` + a good expressive
+reference clip stops sounding robotic almost immediately.
+
+---
+
+## IVR / phone voices (Kokoro cheat-sheet)
+
+For IVR you want clear, warm, neutral-professional. Kokoro's naming is
+`<lang><gender>_name` — `af_`=US female, `am_`=US male, `bf_`=UK female, `bm_`=UK male.
+
+> Honest caveat: Kokoro's **female** voices are top-graded; its **male** voices top
+> out around "C+". For a truly natural *male* IVR voice, use openedai-speech / XTTS
+> with a good male reference. For female, Kokoro is excellent as-is.
+
+| Voice | Who | Notes |
+|---|---|---|
+| **af_heart** | US female | Highest quality, warm & friendly — great default |
+| **af_bella** | US female | Expressive and clear — excellent for prompts |
+| **bf_emma** | UK female | Polished, professional British |
+| af_sarah / af_kore | US female | Solid neutral alternatives |
+| **am_michael** | US male | Clearest American male, professional |
+| **am_fenrir** | US male | Warm American male |
+| **am_puck** | US male | Bright, upbeat male |
+| **bm_george** / bm_fable | UK male | Professional British male |
+
+**Top picks:** female = `af_heart` / `af_bella`; male = `am_michael` (or XTTS for the male).
+
+**Audition them all at once:**
+```bash
+for v in af_heart af_bella bf_emma am_michael am_fenrir bm_george; do
+  curl -s http://HOST:8880/v1/audio/speech -H "Content-Type: application/json" \
+    -d "{\"model\":\"kokoro\",\"voice\":\"$v\",\"input\":\"Thank you for calling. Press one for sales, or two for support.\",\"speed\":0.95,\"response_format\":\"mp3\"}" \
+    --output "ivr_$v.mp3"
+done
+```
+
+**IVR tuning that actually matters:**
+- **Slow slightly:** `"speed": 0.9`–`0.95` — calmer and more intelligible on a line.
+- **Short sentences, strong punctuation:** *"Press one, for sales. Press two, for support."*
+- **Spell it out:** `1` → `one`, `Mon-Fri` → `Monday through Friday`.
+- **One consistent voice** across all prompts.
+- **Telephony format:** synthesize at normal quality, then downsample for the PBX:
+  `ffmpeg -i in.mp3 -ar 8000 -ac 1 -c:a pcm_mulaw out.wav` (8kHz μ-law mono).
+
+---
+
 ## More ideas (same three building blocks + search + memory)
 
 The stack gives you STT (Whisper), an LLM (llama3.1 / codellama), TTS (Kokoro),
