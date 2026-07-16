@@ -2377,7 +2377,7 @@ export default function Settings() {
               <div className="section-panel space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-base font-semibold text-gray-950">Proxy Hosts ({npmHosts.length})</h3>
-                  <a href={npmStatus?.url || '#'} target="_blank" rel="noreferrer" className="text-xs text-blue-700 underline" title="Open the full NPM admin panel in a new tab.">Open NPM Admin</a>
+                  <span className="text-xs text-gray-500" title="NPM's admin (:81) is bound to localhost and reached only over the internal network. Publish it with 'NPM admin (SSL)' below to open it in a browser.">admin :81 is internal-only</span>
                 </div>
                 {npmHosts.length > 0 && (
                   <div className="overflow-x-auto">
@@ -2396,7 +2396,7 @@ export default function Settings() {
                     </table>
                   </div>
                 )}
-                {npmHosts.length === 0 && <p className="text-sm text-gray-500">No proxy hosts configured yet. Add one below or use the <a href={npmStatus?.url || '#'} target="_blank" rel="noreferrer" className="underline text-blue-700">NPM admin panel</a> for full control.</p>}
+                {npmHosts.length === 0 && <p className="text-sm text-gray-500">No proxy hosts configured yet. Add one below. (NPM&rsquo;s admin is internal-only; publish it via &ldquo;NPM admin (SSL)&rdquo; to manage it in a browser.)</p>}
               </div>
 
               <div className="section-panel space-y-3">
@@ -2447,14 +2447,13 @@ export default function Settings() {
                   )}
                 </div>
                 <button className="btn-primary" onClick={createProxyHost}>Create Proxy Host</button>
-                <p className="text-xs text-gray-500">New hosts appear in the Proxy Hosts table above. You can also manage SSL, redirects, and advanced options in <a href={npmStatus?.url || '#'} target="_blank" rel="noreferrer" className="underline text-blue-700">NPM admin</a>.</p>
+                <p className="text-xs text-gray-500">New hosts appear in the Proxy Hosts table above. For SSL, redirects, and advanced options, publish the NPM admin via &ldquo;NPM admin (SSL)&rdquo; above and manage it there.</p>
               </div>
 
               <div className="section-panel space-y-3">
                 <h3 className="text-base font-semibold text-gray-950">NPM Documentation</h3>
-                <p className="text-sm text-gray-600">For full proxy host configuration, SSL certificates, redirections, streams, access lists, and advanced settings, use the NPM admin panel directly.</p>
+                <p className="text-sm text-gray-600">For full proxy host configuration, SSL certificates, redirections, streams, access lists, and advanced settings, use the NPM admin panel. Its admin port is internal-only — publish it with &ldquo;NPM admin (SSL)&rdquo; above to reach it in a browser.</p>
                 <div className="flex flex-wrap gap-2">
-                  <a href={npmStatus?.url || '#'} target="_blank" rel="noreferrer" className="btn-secondary inline-flex items-center gap-1">Open NPM Admin</a>
                   <a href="https://nginxproxymanager.com/guide/" target="_blank" rel="noreferrer" className="btn-secondary inline-flex items-center gap-1">NPM Official Docs</a>
                   <Link to="/docs" className="btn-secondary inline-flex items-center gap-1">Stack Manager Docs</Link>
                 </div>

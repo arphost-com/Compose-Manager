@@ -2,7 +2,7 @@
 
 Manage all your Docker Compose stacks from one dashboard. Discover, deploy, update, back up, and monitor projects across a fleet of hosts — with a 200+ template catalog, scheduled updates, live shell access, firewall management, two-factor auth, and agents that phone home from behind NAT.
 
-<!-- Replace with your own screenshot: docs/images/dashboard-dark.png -->
+![Stack Manager login &amp; landing page](docs/images/login-landing-dark.png)
 
 ---
 

@@ -397,9 +397,9 @@ func (h *ProxyHandler) ListHosts(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
+	// NPM returns a bare JSON array; wrap it in the standard {status,data}
+	// envelope so the dashboard (which reads res.data) can render the hosts.
+	writeJSON(w, http.StatusOK, json.RawMessage(body))
 }
 
 // CreateHost creates a new proxy host in NPM.

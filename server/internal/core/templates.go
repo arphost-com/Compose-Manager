@@ -3069,8 +3069,10 @@ func gamingTemplates() []StackTemplate {
     image: lscr.io/linuxserver/emulatorjs:1.9.2
     restart: unless-stopped
     ports:
-      - "${EMULATORJS_PORT:-3000}:3000"
-      - "${EMULATORJS_MGMT_PORT:-3001}:3001"
+      # Playable game frontend (container port 80) — this is the site you play on.
+      - "${EMULATORJS_FRONTEND_PORT:-8082}:80"
+      # ROM management / config-generation backend.
+      - "${EMULATORJS_MGMT_PORT:-3000}:3000"
     environment:
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
@@ -3082,8 +3084,8 @@ volumes:
   emulatorjs-config:
   emulatorjs-data:
 `,
-			EnvContent: "EMULATORJS_PORT=3000\nEMULATORJS_MGMT_PORT=3001\nPUID=1000\nPGID=1000\nTZ=Etc/UTC\n",
-			Notes:      "Port 3000 is the player frontend, port 3001 is the ROM management backend. Upload ROMs through the management UI. Pinned to 1.9.2 — LinuxServer deprecated this image and the latest tag no longer resolves.",
+			EnvContent: "EMULATORJS_FRONTEND_PORT=8082\nEMULATORJS_MGMT_PORT=3000\nPUID=1000\nPGID=1000\nTZ=Etc/UTC\n",
+			Notes:      "Two separate web UIs. MANAGEMENT is on EMULATORJS_MGMT_PORT (3000): open it first, download the default configs/art to build the folder skeleton, add ROMs to /data, then integrate them. The playable game FRONTEND is on EMULATORJS_FRONTEND_PORT (container port 80) — that's the site you actually play on. (The old template wrongly mapped 3001 and omitted port 80, so the frontend was unreachable.) NOTE: LinuxServer has DEPRECATED this image (pinned to 1.9.2) — for a maintained alternative use the RomM template (pairs with EmulatorJS) or Gaseous.",
 		},
 		{
 			ID:          "sunshine",
