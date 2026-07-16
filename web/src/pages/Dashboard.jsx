@@ -992,6 +992,11 @@ export default function Dashboard() {
                       ) : (
                         <Badge tone={updateStatusTone(p)}>{updateStatusLabel(p)}</Badge>
                       )}
+                      {p.template_update_available && (
+                        <Link to={`/projects/${encodeURIComponent(p.name)}`} title="A newer catalog template is available — open the stack to review and apply the compose + .env update.">
+                          <Badge tone="blue">template update</Badge>
+                        </Link>
+                      )}
                     </div>
                   </td>
                   <td className="py-3"><Badge tone={p.running ? 'green' : 'gray'}>{p.running ? 'running' : 'stopped'}</Badge></td>

@@ -17,6 +17,10 @@ type Project struct {
 	Documentation []ProjectDoc        `json:"documentation,omitempty"`
 	UpdatePolicy  ProjectUpdatePolicy `json:"update_policy,omitempty"`
 	UpdateStatus  ProjectUpdateStatus `json:"update_status,omitempty"`
+	// TemplateUpdateAvailable is set for local projects whose matching catalog
+	// template's compose has changed since deploy (a one-click template update
+	// is available on the project's detail page).
+	TemplateUpdateAvailable bool `json:"template_update_available,omitempty"`
 }
 
 // Container represents a running Docker container.

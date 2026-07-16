@@ -121,6 +121,11 @@ func (h *ProjectHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		for i := range local {
 			local[i].SourceHost = "local"
+			// Flag stacks whose matching catalog template has changed since
+			// deploy, so the dashboard can surface a one-click template update.
+			if p := h.Engine.PreviewTemplateUpdate(&local[i]); p.HasTemplate && p.ComposeChanged {
+				local[i].TemplateUpdateAvailable = true
+			}
 		}
 		projects = append(projects, local...)
 	}
