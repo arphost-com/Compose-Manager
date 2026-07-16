@@ -286,6 +286,8 @@ func main() {
 			r.Get("/projects/{name}/status", projectHandler.Status)
 			r.Post("/projects/{name}/pull", projectHandler.Pull)
 			r.Post("/projects/{name}/up", projectHandler.Up)
+			r.Get("/projects/{name}/template-update", projectHandler.TemplateUpdateStatus)
+			r.Post("/projects/{name}/template-update", projectHandler.ApplyTemplateUpdate)
 			r.Post("/projects/{name}/down", projectHandler.Down)
 
 			// Up + Watch: persistent live-tail startup logs. Refresh-safe.

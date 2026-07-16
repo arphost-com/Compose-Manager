@@ -335,6 +335,39 @@ func (h *ProjectHandler) Up(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// TemplateUpdateStatus reports whether the project can be updated from its
+// matching catalog template (the template's compose has changed since deploy).
+func (h *ProjectHandler) TemplateUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	project, err := h.getProject(w, r)
+	if err != nil {
+		return
+	}
+	writeJSON(w, http.StatusOK, h.Engine.PreviewTemplateUpdate(project))
+}
+
+// ApplyTemplateUpdate rewrites the project's compose.yml from its catalog
+// template, migrates the .env (keeps existing values, adds new template keys),
+// backs up the originals, and recreates the stack.
+func (h *ProjectHandler) ApplyTemplateUpdate(w http.ResponseWriter, r *http.Request) {
+	project, err := h.getProject(w, r)
+	if err != nil {
+		return
+	}
+	applied, err := h.Engine.ApplyTemplateUpdate(project)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// Recreate so the new compose + env take effect. ExecCompose reads the
+	// (now rewritten) compose file fresh.
+	result := h.Engine.ExecCompose(project, "up", "-d", "--force-recreate")
+	h.syncPorts(r.Context(), project.Name)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"applied":  applied,
+		"recreate": result,
+	})
+}
+
 // Down stops and removes containers.
 func (h *ProjectHandler) Down(w http.ResponseWriter, r *http.Request) {
 	project, err := h.getProject(w, r)

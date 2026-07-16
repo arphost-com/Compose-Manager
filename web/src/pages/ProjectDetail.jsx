@@ -78,6 +78,8 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [tabLoading, setTabLoading] = useState(false);
   const [actionResult, setActionResult] = useState(null);
+  const [tmplUpdate, setTmplUpdate] = useState(null);
+  const [applyingTmpl, setApplyingTmpl] = useState(false);
   const [timeout, setTimeoutValue] = useState(300);
   const [logOptions, setLogOptions] = useState({ tail: 200, container: '', watch: false });
   const [policyForm, setPolicyForm] = useState({ mode: 'auto', notes: '' });
@@ -201,6 +203,31 @@ export default function ProjectDetail() {
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
   useEffect(() => { fetchProject(); }, [name, location.search]);
+
+  // Whether this project can be updated from its matching catalog template.
+  const loadTmplUpdate = useCallback(() => {
+    projects.templateUpdate(name)
+      .then(res => setTmplUpdate(res.data))
+      .catch(() => setTmplUpdate(null));
+  }, [name]);
+  useEffect(() => { loadTmplUpdate(); }, [loadTmplUpdate]);
+
+  const applyTemplateUpdate = async () => {
+    if (!window.confirm(`Update "${name}" to the current "${tmplUpdate?.template_name || 'catalog'}" template? Its compose.yml is rewritten from the template and your .env values are kept (new template keys are added). The old compose.yml and .env are backed up, then the stack is recreated.`)) return;
+    setApplyingTmpl(true);
+    setActionResult({ status: 'running', label: 'update from template' });
+    try {
+      const res = await projects.applyTemplateUpdate(name);
+      const rc = res.data?.recreate;
+      setActionResult({ status: rc && !rc.success ? 'error' : 'done', label: 'update from template', result: { output: (rc?.output || '') + '\nCompose rewritten from template; .env migrated (backups saved as .bak). ' } });
+      await fetchProject();
+      loadTmplUpdate();
+    } catch (err) {
+      setActionResult({ status: 'error', label: 'update from template', error: err.message });
+    } finally {
+      setApplyingTmpl(false);
+    }
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -597,6 +624,24 @@ export default function ProjectDetail() {
       </div>
 
       {actionResult && <ActionResult result={actionResult} onDismiss={() => setActionResult(null)} />}
+
+      {!isRemote && tmplUpdate?.has_template && tmplUpdate?.compose_changed && (
+        <div className="rounded-md border border-blue-300 bg-blue-50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-blue-950">Catalog template updated</div>
+              <p className="mt-1 text-sm text-blue-900">
+                The <span className="font-medium">{tmplUpdate.template_name}</span> template has changed since this stack was deployed.
+                Update rewrites <code className="rounded bg-blue-100 px-1">compose.yml</code> from the template and migrates your <code className="rounded bg-blue-100 px-1">.env</code> — existing values are kept{tmplUpdate.new_env_keys?.length ? <>, and new settings are added (<span className="font-mono text-xs">{tmplUpdate.new_env_keys.join(', ')}</span>)</> : ''}. The old files are backed up, then the stack is recreated.
+                {tmplUpdate.gpu_applied && <span className="mt-1 block font-medium text-amber-800">⚠ This project has GPU passthrough in its compose — the template replaces it, so re-apply Enable GPU afterward if needed (the old compose is saved as .bak).</span>}
+              </p>
+            </div>
+            <button className="btn-primary shrink-0" onClick={applyTemplateUpdate} disabled={applyingTmpl}>
+              {applyingTmpl ? 'Updating…' : 'Update from template'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="section-panel">
         <div className="flex flex-wrap gap-1 border-b border-gray-200 pb-3">
