@@ -1299,6 +1299,8 @@ volumes:
   comfyui:
     image: yanwk/comfyui-boot:cu126-slim
     restart: unless-stopped
+    environment:
+      CLI_ARGS: ${COMFYUI_CLI_ARGS:-}
     ports:
       - "${COMFYUI_PORT:-8188}:8188"
     volumes:
@@ -1306,8 +1308,8 @@ volumes:
 volumes:
   comfyui-storage:
 `,
-			EnvContent: "COMFYUI_PORT=8188\n",
-			Notes:      "Image generation is much better with GPU support. Add device/runtime settings manually for your host.",
+			EnvContent: "COMFYUI_PORT=8188\nCOMFYUI_CLI_ARGS=\n",
+			Notes:      "This is a CUDA image (~19.5 GB) — the first deploy pulls a large layer set, so if a one-click 'up' times out, pre-pull on the host (docker pull yanwk/comfyui-boot:cu126-slim) then bring it up. Needs an NVIDIA GPU + driver for real use (add device/runtime settings for your host). On a GPU-less host it crashes at CUDA init unless you force CPU mode: set COMFYUI_CLI_ARGS=--cpu (leave empty on GPU hosts) — CPU generation works but is very slow.",
 		},
 		{
 			ID:          "jupyter-pytorch",

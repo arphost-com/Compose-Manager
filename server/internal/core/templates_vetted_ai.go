@@ -57,14 +57,12 @@ func vettedAIStackTemplates() []StackTemplate {
   mongodb:
     image: mongo:8.0.20
     restart: unless-stopped
-    user: "${UID:-1000}:${GID:-1000}"
     command: mongod --noauth
     volumes:
       - librechat-mongodb:/data/db
   meilisearch:
     image: getmeili/meilisearch:v1.35.1
     restart: unless-stopped
-    user: "${UID:-1000}:${GID:-1000}"
     environment:
       MEILI_NO_ANALYTICS: "true"
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in .env}
@@ -88,6 +86,11 @@ func vettedAIStackTemplates() []StackTemplate {
       POSTGRES_USER: librechat
       POSTGRES_PASSWORD: ${LIBRECHAT_VECTOR_DB_PASSWORD:?set LIBRECHAT_VECTOR_DB_PASSWORD in .env}
       RAG_PORT: 8000
+      # Optional: add an embeddings key to enable file/RAG search. Leave empty to
+      # skip it (the chat UI runs fine without RAG). Point RAG_OPENAI_BASEURL at
+      # any OpenAI-compatible endpoint if not using OpenAI directly.
+      RAG_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RAG_OPENAI_BASEURL: ${RAG_OPENAI_BASEURL:-}
     depends_on:
       - vectordb
 volumes:
@@ -98,8 +101,8 @@ volumes:
   librechat-meili:
   librechat-pgvector:
 `,
-			EnvContent: "LIBRECHAT_PORT=3080\nLIBRECHAT_ADMIN_PORT=3001\nLIBRECHAT_PUBLIC_URL=http://localhost:3080\nUID=1000\nGID=1000\nMEILI_MASTER_KEY=\nJWT_SECRET=\nJWT_REFRESH_SECRET=\nCREDS_KEY=\nCREDS_IV=\nADMIN_PANEL_SESSION_SECRET=\nLIBRECHAT_VECTOR_DB_PASSWORD=\nOPENAI_API_KEY=\nANTHROPIC_API_KEY=\n",
-			Notes:      "Use LibreChat when customers want one shared AI chat UI across OpenAI, Anthropic, local OpenAI-compatible endpoints, agents, MCP, and files. Set all secret fields before exposing it.",
+			EnvContent: "LIBRECHAT_PORT=3080\nLIBRECHAT_ADMIN_PORT=3001\nLIBRECHAT_PUBLIC_URL=http://localhost:3080\nUID=1000\nGID=1000\nMEILI_MASTER_KEY=\nJWT_SECRET=\nJWT_REFRESH_SECRET=\nCREDS_KEY=\nCREDS_IV=\nADMIN_PANEL_SESSION_SECRET=\nLIBRECHAT_VECTOR_DB_PASSWORD=\nOPENAI_API_KEY=\nANTHROPIC_API_KEY=\nRAG_OPENAI_BASEURL=\n",
+			Notes:      "Use LibreChat when customers want one shared AI chat UI across OpenAI, Anthropic, local OpenAI-compatible endpoints, agents, MCP, and files. REQUIRED before deploy — fill every secret in .env or 'up' fails with a 'required variable ... is missing' interpolation error: MEILI_MASTER_KEY, JWT_SECRET, JWT_REFRESH_SECRET, ADMIN_PANEL_SESSION_SECRET, LIBRECHAT_VECTOR_DB_PASSWORD (openssl rand -hex 32 each), CREDS_KEY (openssl rand -hex 32 → 64 hex chars) and CREDS_IV (openssl rand -hex 16 → 32 hex chars). The rag_api service needs an embeddings backend: set OPENAI_API_KEY (or an OpenAI-compatible RAG_OPENAI_BASEURL + key) or rag_api will crash-loop — the rest of the app (chat, mongo, meili) runs fine without it, only file/RAG search is disabled. mongodb and meilisearch run as their image default user so their fresh named volumes initialize without a chown.",
 		},
 		{
 			ID:          "onyx",

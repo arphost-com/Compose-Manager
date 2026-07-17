@@ -2029,6 +2029,7 @@ volumes:
 			ComposeContent: `services:
   guac-init:
     image: guacamole/guacamole:1.6.0
+    user: "0:0"
     entrypoint: ["/bin/sh", "-c"]
     command:
       - test -s /init/initdb.sql || /opt/guacamole/bin/initdb.sh --postgresql > /init/initdb.sql
@@ -2071,7 +2072,7 @@ volumes:
   guac-init:
 `,
 			EnvContent: "GUAC_PORT=8080\nPOSTGRES_PASSWORD=change-me-postgres-password\n",
-			Notes:      "Web UI is at /guacamole/ (e.g. http://host:8080/guacamole/). The guac-init sidecar generates the DB schema automatically before Postgres first-boots, so it is one-click. Default login guacadmin / guacadmin — change it immediately. Set POSTGRES_PASSWORD before first boot.",
+			Notes:      "Web UI is at /guacamole/ (e.g. http://host:8080/guacamole/). The guac-init sidecar runs as root (user 0:0) so it can write the generated schema into the fresh guac-init volume, then Postgres first-boots from it — one-click. Default login guacadmin / guacadmin — change it immediately. Set POSTGRES_PASSWORD before first boot.",
 		},
 		{
 			ID: "rustdesk", Name: "RustDesk Server", Description: "Self-hosted RustDesk signal + relay server for private remote-desktop connections (TeamViewer alt).",
@@ -2572,11 +2573,14 @@ volumes:
 			ID: "arpvpn", Name: "ARPVPN", Description: "ARPHost's WireGuard VPN management web GUI — users, roles, live traffic graphs, and a full API.",
 			Category:    "security",
 			Subcategory: "vpn",
-			Source:      "official-github", Image: "10.10.10.96:5050/arphost/arpvpn:v2-latest",
+			Source:      "official-github", Image: "arpvpn:local",
 			Tags: []string{"security", "vpn", "wireguard", "arphost", "gui"},
 			ComposeContent: `services:
   arpvpn:
-    image: ${ARPVPN_IMAGE:-10.10.10.96:5050/arphost/arpvpn:v2-latest}
+    build:
+      context: ${ARPVPN_BUILD_CONTEXT:-https://github.com/arphost-com/ARPVPN.git#main}
+      dockerfile: docker/Dockerfile
+    image: ${ARPVPN_IMAGE:-arpvpn:local}
     user: "${ARPVPN_RUNTIME_USER:-arpvpn}"
     environment:
       ARPVPN_CONTAINER_NAME: "${ARPVPN_CONTAINER_NAME:-arpvpn}"
@@ -2618,8 +2622,8 @@ volumes:
     network_mode: host
     restart: unless-stopped
 `,
-			EnvContent: "ARPVPN_IMAGE=10.10.10.96:5050/arphost/arpvpn:v2-latest\nARPVPN_RUNTIME_USER=arpvpn\nARPVPN_HTTP_PORT=8085\nARPVPN_HTTPS_PORT=8086\nARPVPN_SECURE_COOKIES=0\nDATA_FOLDER=./data\n",
-			Notes:      "ARPHost's own WireGuard GUI. Uses host networking + NET_ADMIN/NET_RAW; web UI on ARPVPN_HTTP_PORT (8085), HTTPS on 8086. The image lives on the ARPHost GitLab registry — run docker login 10.10.10.96:5050 first (Settings > Registry Login). Config persists under DATA_FOLDER. Default login is in the project docs.",
+			EnvContent: "ARPVPN_BUILD_CONTEXT=https://github.com/arphost-com/ARPVPN.git#main\nARPVPN_IMAGE=arpvpn:local\nARPVPN_RUNTIME_USER=arpvpn\nARPVPN_HTTP_PORT=8085\nARPVPN_HTTPS_PORT=8086\nARPVPN_SECURE_COOKIES=0\nDATA_FOLDER=./data\n",
+			Notes:      "ARPHost's own WireGuard GUI. Builds from the public GitHub repo (arphost-com/ARPVPN) on first 'up' — no registry login needed; the host just needs outbound access to github.com. Uses host networking + NET_ADMIN/NET_RAW; web UI on ARPVPN_HTTP_PORT (8085), HTTPS on 8086. DATA_FOLDER must be writable by UID 1000 (the in-container arpvpn user) — the first boot fails fast if it is not. To build from the private registry image instead, set ARPVPN_IMAGE and remove the build block. Default login is in the project docs.",
 		},
 		{
 			ID: "wg-easy", Name: "wg-easy", Description: "The simplest self-hosted WireGuard VPN with a clean web UI for managing peers.",
